@@ -1,0 +1,43 @@
+<!-- bnbu_backend_api/templates/accounts/register.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+</head>
+<body>
+    <h2>Register</h2>
+    <form method="POST">
+      {% csrf_token %}
+      <div>
+          <label for="username">Username <span style="color: red;">*</span></label>
+          <input type="text" name="username" id="username" required>
+      </div>
+      <div>
+          <label for="password">Password <span style="color: red;">*</span></label>
+          <input type="password" name="password1" id="password1" required>
+      </div>
+      <div>
+          <label for="password2">Confirm Password <span style="color: red;">*</span></label>
+          <input type="password" name="password2" id="password2" required>
+      </div>
+      <div>
+          <label for="email">Email <span style="color: red;">*</span></label>
+          <input type="email" name="email" id="email" required>
+      </div>
+      <div>
+          <label for="user_type">Select User Type <span style="color: red;">*</span></label>
+          <select name="user_type" id="user_type" required>
+              <option value="" disabled selected>Select User Type</option>
+              {% for key, value in user_type_choices %}
+                  <option value="{{ key }}">{{ value }}</option>
+              {% endfor %}
+          </select>
+      </div>
+      <button type="submit">Register</button>
+    </form>
+
+    <p>Already have an account? <a href="{% url 'login' %}">Login here</a>.</p>
+</body>
+</html>
