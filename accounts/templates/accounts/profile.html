@@ -1,3 +1,4 @@
+<!-- bnbu_backend_api/templates/accounts/profile.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,9 +10,8 @@
   <h1>Profile Page</h1>
   <p>Username: {{ user.username }}</p>
   <p>User Type: {{ user.get_user_type_display }}</p>
-  <p><a href="{% url 'password_reset' %}">Reset Password</a></p>
-
-  <!-- Use a form to submit a POST request for logout -->
+  <p>Email: {{ user.email }}</p>
+  <p>Date Joined: {{ user.date_joined }}</p>
   <form method="POST" action="{% url 'logout' %}">
     {% csrf_token %}
     <button type="submit">Logout</button>
