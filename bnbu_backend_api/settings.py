@@ -148,12 +148,8 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-}
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,  # Set the default page size (number of users per page)
 }
 
 SIMPLE_JWT = {
@@ -175,6 +171,7 @@ SIMPLE_JWT = {
 
 
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
     "http://localhost:5174",
     # "http://127.0.0.1:3000",
 ]
@@ -183,3 +180,7 @@ AUTHENTICATION_BACKENDS = [
   'accounts.backends.EmailBackend', 
   'django.contrib.auth.backends.ModelBackend'
 ]
+
+# Use the console email backend for development to print emails to the console instead of sending them.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
