@@ -44,6 +44,7 @@ class PasswordChangeSerializer(serializers.Serializer):
     """
     old_password = serializers.CharField(required=True, write_only=True)
     new_password = serializers.CharField(required=True, write_only=True)
+    confirm_new_password = serializers.CharField(required=True, write_only=True)
 
     def validate_new_password(self, value):
         """Validate the new password against Django's password validation."""
@@ -54,19 +55,22 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
-        """Check that the old password is correct."""
+        """Check that the old password is correct and new passwords match."""
         user = self.context['request'].user
         if not user.check_password(data['old_password']):
             raise serializers.ValidationError({"old_password": "Old password is incorrect."})
-        return data
 
+        if data['new_password'] != data['confirm_new_password']:
+            raise serializers.ValidationError({"confirm_new_password": "New password and confirm password do not match."})
+
+        return data
+    
     def save(self, **kwargs):
         """Set the new password for the user."""
         user = self.context['request'].user
         user.set_password(self.validated_data['new_password'])
         user.save()
         return user
-
 
 class PasswordResetSerializer(serializers.Serializer):
     """
