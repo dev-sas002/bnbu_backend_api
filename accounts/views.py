@@ -15,13 +15,18 @@ from django.utils.encoding import force_bytes
 from .serializers import FirstTimePasswordUpdateSerializer, UserSerializer, PasswordChangeSerializer, PasswordResetSerializer
 from .models import CustomUser
 from django.contrib.auth.hashers import make_password
+from rest_framework.pagination import PageNumberPagination
+    
 class UserListCreateView(APIView):
     permission_classes = [IsAdminUser]
+    pagination_class = PageNumberPagination
 
     def get(self, request):
+        paginator = self.pagination_class()
         users = CustomUser.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        paginated_users = paginator.paginate_queryset(users, request)
+        serializer = UserSerializer(paginated_users, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     def post(self, request):
         serializer = UserSerializer(data=request.data)
@@ -92,14 +97,19 @@ def password_reset(request):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             reset_link = f"http://example.com/reset/{uid}/{token}/"
+            
+            # Simulating sending the reset email (shows in console)
             send_mail(
                 "Password Reset",
                 f"Use this link to reset your password: {reset_link}",
                 "from@example.com",
                 [email],
             )
-            return Response({"message": "Password reset email sent"}, status=status.HTTP_200_OK)
-        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            return Response({"message": "Password reset email sent", "reset_link": reset_link}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 class LoginView(APIView):
     def post(self, request):
