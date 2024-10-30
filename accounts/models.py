@@ -33,16 +33,10 @@ class CustomUser(AbstractUser):
         ('research', 'Research User'),
         ('coach', 'Coach User'),
         ('client', 'Client User'),
-        ('general', 'General User'),
-    )
-    NON_ADMIN_USER_TYPE_CHOICES = (
-        ('research', 'Research User'),
-        ('coach', 'Coach User'), 
-        ('client', 'Client User'),
-        ('general', 'General User'),
+        ('customer', 'Customer User'),
     )
 
-    user_type = models.CharField(max_length=50, choices=USER_TYPE_CHOICES, default='client')
+    user_type = models.CharField(max_length=50, choices=USER_TYPE_CHOICES, default='customer')
     is_first_login = models.BooleanField(default=True)
 
     # Remove the username field, replace it with email
@@ -52,7 +46,20 @@ class CustomUser(AbstractUser):
     USERNAME_FIELD = 'email'  # Use email for authentication
     REQUIRED_FIELDS = []  # Remove username from required fields
 
+    # Foreign key to link customers to clients
+    client = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='customers',
+        limit_choices_to={'user_type': 'client'}
+    )
+
     objects = CustomUserManager()
+
+    class Meta:
+        ordering = ['id']
 
     def __str__(self):
         return self.email

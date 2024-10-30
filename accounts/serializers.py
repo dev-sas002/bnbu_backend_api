@@ -37,6 +37,14 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+# class ClientSerializer(UserSerializer):
+#     class Meta(UserSerializer.Meta):
+#         fields = ['id', 'email', 'user_type']  # Limit fields for clients
+
+class CustomerSerializer(UserSerializer):
+    class Meta(UserSerializer.Meta):
+        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'user_type', 'is_active', 'is_first_login', 'client']  # Include client field for customers
+
 
 class PasswordChangeSerializer(serializers.Serializer):
     """
