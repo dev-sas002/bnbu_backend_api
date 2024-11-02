@@ -7,12 +7,19 @@ from .models import Lease
 from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsClientOrAdmin  # Import the custom permission class
+from django.utils import timezone
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Q
+
 
 class LeaseViewSet(viewsets.ModelViewSet):
     queryset = Lease.objects.all().order_by('-created_at')
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ['address1', 'city']
     permission_classes = [IsAuthenticated, IsClientOrAdmin]  # Update permission classes
+    pagination_class = PageNumberPagination
+    serializer_class = LeaseSerializer
+    
 
     def get_serializer_class(self):
         if self.action == 'upload_lease':
@@ -38,6 +45,25 @@ class LeaseViewSet(viewsets.ModelViewSet):
         lease_serializer = LeaseSerializer(lease)
         return Response(lease_serializer.data, status=status.HTTP_201_CREATED)
     
+    # Update Lease record
+    @action(detail=True, methods=['put'], url_path='update')
+    def update_lease(self, request, pk=None):
+        lease = self.get_object()
+        serializer = LeaseSerializer(lease, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Delete Lease record
+    @action(detail=True, methods=['delete'], url_path='delete')
+    def delete_lease(self, request, pk=None):
+        lease = self.get_object()
+        lease.delete()
+        return Response({'status': 'Lease deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    
     @action(detail=True, methods=['post'], url_path='revised')
     def revised_lease(self, request, pk=None):
         lease = self.get_object()
@@ -51,15 +77,35 @@ class LeaseViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='search')
     def search(self, request):
         address = request.query_params.get('address')
-        city = request.query_params.get('city')
+        start_date = request.query_params.get('start_date')  
+        end_date = request.query_params.get('end_date')     
         status_value = request.query_params.get('status')
 
         leases = Lease.objects.all()
         
+        # Filter by address if provided (search in both address1 and address2)
         if address:
-            leases = leases.filter(address1__icontains=address)
-        if city:
-            leases = leases.filter(city__icontains=city)
+          leases = leases.filter(Q(address1__icontains=address) | Q(address2__icontains=address))
+
+
+        # Filter by created_at for date range
+        if start_date:
+            try:
+                start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d').date()
+                leases = leases.filter(created_at__gte=start_date)
+            except ValueError:
+                return Response({'detail': 'Invalid start date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if end_date:
+            try:
+                end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d').date()
+                leases = leases.filter(created_at__lte=end_date)
+            except ValueError:
+                return Response({'detail': 'Invalid end date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            end_date = timezone.now().date()
+
+        # Filter by status if provided
         if status_value:
             leases = leases.filter(status=status_value)
 

@@ -10,17 +10,13 @@ class DocumentSerializer(serializers.ModelSerializer):
 class LeaseSerializer(serializers.ModelSerializer):
     num_of_docs = serializers.IntegerField(read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
-    address = serializers.SerializerMethodField()
 
     class Meta:
         model = Lease
         fields = [
-            'id', 'date', 'address', 'city', 'state', 'zip_code', 
+            'id', 'date', 'address1', 'address2', 'city', 'state', 'zip_code', 
             'status', 'num_of_docs', 'documents'
         ]
-
-    def get_address(self, obj):
-        return obj.address
 
 class LeaseUploadSerializer(serializers.ModelSerializer):
     documents = serializers.ListField(
