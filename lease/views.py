@@ -85,8 +85,7 @@ class LeaseViewSet(viewsets.ModelViewSet):
         
         # Filter by address if provided (search in both address1 and address2)
         if address:
-          leases = leases.filter(Q(address1__icontains=address) | Q(address2__icontains=address))
-
+            leases = leases.filter(Q(address1__icontains=address) | Q(address2__icontains=address))
 
         # Filter by created_at for date range
         if start_date:
@@ -108,6 +107,12 @@ class LeaseViewSet(viewsets.ModelViewSet):
         # Filter by status if provided
         if status_value:
             leases = leases.filter(status=status_value)
+
+        # Apply pagination
+        page = self.paginate_queryset(leases)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(leases, many=True)
         return Response(serializer.data if leases.exists() else {'detail': 'No leases found.'}, status=status.HTTP_200_OK)
