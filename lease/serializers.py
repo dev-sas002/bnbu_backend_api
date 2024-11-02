@@ -3,9 +3,11 @@ from rest_framework import serializers
 from .models import Lease, Document
 
 class DocumentSerializer(serializers.ModelSerializer):
+    lease_id = serializers.PrimaryKeyRelatedField(source='lease', read_only=True)  # To show the lease ID
+
     class Meta:
         model = Document
-        fields = ['id', 'name', 'file','version', 'uploaded_at']
+        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at']
 
 class LeaseSerializer(serializers.ModelSerializer):
     num_of_docs = serializers.IntegerField(read_only=True)

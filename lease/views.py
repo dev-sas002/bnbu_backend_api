@@ -3,13 +3,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
-from .models import Lease
-from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer
+from .models import Lease, Document
+from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsClientOrAdmin  # Import the custom permission class
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
+from django.http import StreamingHttpResponse, Http404
 
 
 class LeaseViewSet(viewsets.ModelViewSet):
@@ -116,3 +117,35 @@ class LeaseViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(leases, many=True)
         return Response(serializer.data if leases.exists() else {'detail': 'No leases found.'}, status=status.HTTP_200_OK)
+
+class DocumentViewSet(viewsets.ModelViewSet):
+    queryset = Document.objects.all().order_by('-uploaded_at')
+    serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['lease', 'version']
+    search_fields = ['name']
+
+    @action(detail=False, methods=['get'], url_path='download/lease/(?P<lease_id>\d+)/version/(?P<version>\d+)')
+    def download_document(self, request, lease_id=None, version=None):
+        # Fetch the specific document by lease ID and version
+        try:
+            document = Document.objects.get(lease_id=lease_id, version=version)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Document or version not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the document has a file
+        if document.file:
+            file_path = document.file.path
+            
+            # Define a generator function to stream the file
+            def file_iterator(file_name, chunk_size=512):
+                with open(file_name, 'rb') as f:
+                    while chunk := f.read(chunk_size):
+                        yield chunk
+            
+            response = StreamingHttpResponse(file_iterator(file_path), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="{document.file.name}"'
+            return response
+        
+        return Response({'detail': 'Document file not found.'}, status=status.HTTP_404_NOT_FOUND)
