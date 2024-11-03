@@ -105,6 +105,9 @@ class LeaseViewSet(viewsets.ModelViewSet):
         else:
             end_date = timezone.now().date()
 
+        # Apply ordering to ensure consistency in pagination
+        leases = leases.order_by('-created_at')
+
         # Filter by status if provided
         if status_value:
             leases = leases.filter(status=status_value)
@@ -126,8 +129,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['lease', 'version']
     search_fields = ['name']
 
-    @action(detail=False, methods=['get'], url_path='download/lease/(?P<lease_id>\d+)/version/(?P<version>\d+)')
-    def download_document(self, request, lease_id=None, version=None):
+    @action(detail=False, methods=['get'], url_path='preview/lease/(?P<lease_id>\d+)/version/(?P<version>\d+)')
+    def preview_document(self, request, lease_id=None, version=None):
         # Fetch the specific document by lease ID and version
         try:
             document = Document.objects.get(lease_id=lease_id, version=version)
@@ -145,7 +148,23 @@ class DocumentViewSet(viewsets.ModelViewSet):
                         yield chunk
             
             response = StreamingHttpResponse(file_iterator(file_path), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="{document.file.name}"'
+            response['Content-Disposition'] = f'inline; filename="{document.file.name}"'
             return response
         
         return Response({'detail': 'Document file not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['get'], url_path='lease/(?P<lease_id>\d+)/documents')
+    def list_document_names(self, request, lease_id=None):
+        # Fetch documents related to the specified lease ID
+        documents = Document.objects.filter(lease_id=lease_id).order_by('version')
+        
+        if not documents.exists():
+            return Response({'detail': 'No documents found for this lease.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Format the document names
+        document_names = [
+            {'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}"}
+            for doc in documents
+        ]
+        
+        return Response(document_names, status=status.HTTP_200_OK)
