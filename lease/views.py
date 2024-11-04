@@ -131,13 +131,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['lease', 'version']
     search_fields = ['name']
 
-    @action(detail=False, methods=['get'], url_path='preview/lease/(?P<lease_id>\d+)/version/(?P<version>\d+)')
-    def preview_document(self, request, lease_id=None, version=None):
-        # Fetch the specific document by lease ID and version
+    @action(detail=False, methods=['get'], url_path='preview/(?P<document_id>\d+)')
+    def preview_document(self, request, document_id=None):
+        # Fetch the specific document by document ID
         try:
-            document = Document.objects.get(lease_id=lease_id, version=version)
+            document = Document.objects.get(id=document_id)
         except Document.DoesNotExist:
-            return Response({'detail': 'Document or version not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'Document not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if the document has a file
         if document.file:
@@ -165,8 +165,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # Format the document names
         document_names = [
-            {'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
-             'uploaded_at': doc.uploaded_at
+            {
+              'id': doc.id,
+              'lease_id': doc.lease_id,
+              'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
+              'uploaded_at': doc.uploaded_at
             }
             for doc in documents
         ]
