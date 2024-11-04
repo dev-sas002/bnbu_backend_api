@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 from django.http import StreamingHttpResponse, Http404
+from datetime import timedelta
 
 
 class LeaseViewSet(viewsets.ModelViewSet):
@@ -99,6 +100,7 @@ class LeaseViewSet(viewsets.ModelViewSet):
         if end_date:
             try:
                 end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d').date()
+                end_date = end_date + timedelta(days=1)  # This will now represent the start of the next day
                 leases = leases.filter(created_at__lte=end_date)
             except ValueError:
                 return Response({'detail': 'Invalid end date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -163,7 +165,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # Format the document names
         document_names = [
-            {'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}"}
+            {'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
+             'uploaded_at': doc.uploaded_at
+            }
             for doc in documents
         ]
         
