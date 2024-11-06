@@ -3,16 +3,25 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
-from .models import Lease
-from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer
+from .models import Lease, Document
+from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsClientOrAdmin  # Import the custom permission class
+from django.utils import timezone
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Q
+from django.http import StreamingHttpResponse, Http404
+from datetime import timedelta
+
 
 class LeaseViewSet(viewsets.ModelViewSet):
     queryset = Lease.objects.all().order_by('-created_at')
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ['address1', 'city']
     permission_classes = [IsAuthenticated, IsClientOrAdmin]  # Update permission classes
+    pagination_class = PageNumberPagination
+    serializer_class = LeaseSerializer
+    
 
     def get_serializer_class(self):
         if self.action == 'upload_lease':
@@ -38,6 +47,25 @@ class LeaseViewSet(viewsets.ModelViewSet):
         lease_serializer = LeaseSerializer(lease)
         return Response(lease_serializer.data, status=status.HTTP_201_CREATED)
     
+    # Update Lease record
+    @action(detail=True, methods=['put'], url_path='update')
+    def update_lease(self, request, pk=None):
+        lease = self.get_object()
+        serializer = LeaseSerializer(lease, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Delete Lease record
+    @action(detail=True, methods=['delete'], url_path='delete')
+    def delete_lease(self, request, pk=None):
+        lease = self.get_object()
+        lease.delete()
+        return Response({'status': 'Lease deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    
     @action(detail=True, methods=['post'], url_path='revised')
     def revised_lease(self, request, pk=None):
         lease = self.get_object()
@@ -51,17 +79,99 @@ class LeaseViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='search')
     def search(self, request):
         address = request.query_params.get('address')
-        city = request.query_params.get('city')
+        start_date = request.query_params.get('start_date')  
+        end_date = request.query_params.get('end_date')     
         status_value = request.query_params.get('status')
 
         leases = Lease.objects.all()
         
+        # Filter by address if provided (search in both address1 and address2)
         if address:
-            leases = leases.filter(address1__icontains=address)
-        if city:
-            leases = leases.filter(city__icontains=city)
+            leases = leases.filter(Q(address1__icontains=address) | Q(address2__icontains=address))
+
+        # Filter by created_at for date range
+        if start_date:
+            try:
+                start_date = timezone.datetime.strptime(start_date, '%Y-%m-%d').date()
+                leases = leases.filter(created_at__gte=start_date)
+            except ValueError:
+                return Response({'detail': 'Invalid start date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if end_date:
+            try:
+                end_date = timezone.datetime.strptime(end_date, '%Y-%m-%d').date()
+                end_date = end_date + timedelta(days=1)  # This will now represent the start of the next day
+                leases = leases.filter(created_at__lte=end_date)
+            except ValueError:
+                return Response({'detail': 'Invalid end date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            end_date = timezone.now().date()
+
+        # Apply ordering to ensure consistency in pagination
+        leases = leases.order_by('-created_at')
+
+        # Filter by status if provided
         if status_value:
             leases = leases.filter(status=status_value)
 
+        # Apply pagination
+        page = self.paginate_queryset(leases)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
         serializer = self.get_serializer(leases, many=True)
         return Response(serializer.data if leases.exists() else {'detail': 'No leases found.'}, status=status.HTTP_200_OK)
+
+class DocumentViewSet(viewsets.ModelViewSet):
+    queryset = Document.objects.all().order_by('-uploaded_at')
+    serializer_class = DocumentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['lease', 'version']
+    search_fields = ['name']
+
+    @action(detail=False, methods=['get'], url_path='preview/(?P<document_id>\d+)')
+    def preview_document(self, request, document_id=None):
+        # Fetch the specific document by document ID
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Document not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the document has a file
+        if document.file:
+            file_path = document.file.path
+            
+            # Define a generator function to stream the file
+            def file_iterator(file_name, chunk_size=512):
+                with open(file_name, 'rb') as f:
+                    while chunk := f.read(chunk_size):
+                        yield chunk
+            
+            response = StreamingHttpResponse(file_iterator(file_path), content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{document.file.name}"'
+            return response
+        
+        return Response({'detail': 'Document file not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['get'], url_path='lease/(?P<lease_id>\d+)/documents')
+    def list_document_names(self, request, lease_id=None):
+        # Fetch documents related to the specified lease ID
+        documents = Document.objects.filter(lease_id=lease_id).order_by('version')
+        
+        if not documents.exists():
+            return Response({'detail': 'No documents found for this lease.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Format the document names
+        document_names = [
+            {
+              'id': doc.id,
+              'lease_id': doc.lease_id,
+              'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
+              'uploaded_at': doc.uploaded_at
+            }
+            for doc in documents
+        ]
+        
+        return Response(document_names, status=status.HTTP_200_OK)

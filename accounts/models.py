@@ -36,7 +36,7 @@ class CustomUser(AbstractUser):
         ('customer', 'Customer User'),
     )
 
-    user_type = models.CharField(max_length=50, choices=USER_TYPE_CHOICES, default='customer')
+    user_type = models.CharField(max_length=50, choices=USER_TYPE_CHOICES, default='admin')
     is_first_login = models.BooleanField(default=True)
 
     # Remove the username field, replace it with email

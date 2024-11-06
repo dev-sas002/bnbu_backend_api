@@ -3,24 +3,22 @@ from rest_framework import serializers
 from .models import Lease, Document
 
 class DocumentSerializer(serializers.ModelSerializer):
+    lease_id = serializers.PrimaryKeyRelatedField(source='lease', read_only=True)  # To show the lease ID
+
     class Meta:
         model = Document
-        fields = ['id', 'name', 'file','version', 'uploaded_at']
+        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at']
 
 class LeaseSerializer(serializers.ModelSerializer):
     num_of_docs = serializers.IntegerField(read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
-    address = serializers.SerializerMethodField()
 
     class Meta:
         model = Lease
         fields = [
-            'id', 'date', 'address', 'city', 'state', 'zip_code', 
+            'id', 'date', 'address1', 'address2', 'city', 'state', 'zip_code', 
             'status', 'num_of_docs', 'documents'
         ]
-
-    def get_address(self, obj):
-        return obj.address
 
 class LeaseUploadSerializer(serializers.ModelSerializer):
     documents = serializers.ListField(
