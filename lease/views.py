@@ -169,7 +169,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
               'id': doc.id,
               'lease_id': doc.lease_id,
               'name': f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
-              'uploaded_at': doc.uploaded_at
+              'uploaded_at': doc.uploaded_at,
+              'status': doc.status,
             }
             for doc in documents
         ]

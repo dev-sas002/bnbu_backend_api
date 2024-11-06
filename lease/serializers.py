@@ -7,7 +7,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at']
+        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at' ,'status']
 
 class LeaseSerializer(serializers.ModelSerializer):
     num_of_docs = serializers.IntegerField(read_only=True)

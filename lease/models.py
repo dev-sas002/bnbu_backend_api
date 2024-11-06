@@ -31,11 +31,17 @@ class Lease(models.Model):
         return f"{self.address} - {self.city} - {self.status}"
 
 class Document(models.Model):
+    STATUS_CHOICES = [
+        ('Draft', 'Draft'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+    ]
     lease = models.ForeignKey(Lease, related_name='documents', on_delete=models.CASCADE)
     file = models.FileField(upload_to='documents/')
     name = models.CharField(max_length=255)
     version = models.PositiveIntegerField(default=1)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Draft')
 
     def save(self, *args, **kwargs):
         # Set the version number to the next version if it's a new document for the lease
@@ -45,5 +51,5 @@ class Document(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Document for Lease {self.lease.id} - {self.name} (Version {self.version})"
+        return f"Document for Lease {self.lease.id} - {self.name} (Version {self.version}) - {self.status}"
 
