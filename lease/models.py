@@ -35,13 +35,14 @@ class Document(models.Model):
         ('Draft', 'Draft'),
         ('Approved', 'Approved'),
         ('Rejected', 'Rejected'),
+        ('Pending', 'Pending'),
     ]
     lease = models.ForeignKey(Lease, related_name='documents', on_delete=models.CASCADE)
     file = models.FileField(upload_to='documents/')
     name = models.CharField(max_length=255)
     version = models.PositiveIntegerField(default=1)
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Draft')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
 
     def save(self, *args, **kwargs):
         # Set the version number to the next version if it's a new document for the lease
