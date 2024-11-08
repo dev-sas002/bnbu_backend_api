@@ -51,6 +51,12 @@ class Document(models.Model):
             self.version = (last_document.version + 1) if last_document else 1
         super().save(*args, **kwargs)
 
+        # Update the lease status to match the latest document's status
+        latest_document = Document.objects.filter(lease=self.lease).order_by('-version').first()
+        if latest_document and latest_document.status != self.lease.status:
+            self.lease.status = latest_document.status
+            self.lease.save()
+
     def __str__(self):
         return f"Document for Lease {self.lease.id} - {self.name} (Version {self.version}) - {self.status}"
 
