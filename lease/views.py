@@ -76,8 +76,13 @@ class LeaseViewSet(viewsets.ModelViewSet):
         serializer = RevisedLeaseUploadSerializer(data=request.data)
 
         if serializer.is_valid():
-            serializer.update(lease, serializer.validated_data)
-            return Response({'status': 'revised documents uploaded'}, status=status.HTTP_200_OK)
+            # Get the document IDs from the serializer update method
+            document_ids = serializer.update(lease, serializer.validated_data)
+            return Response(
+                {'status': 'revised documents uploaded', 'document_ids': document_ids},
+                status=status.HTTP_200_OK
+            )
+        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'], url_path='search')
