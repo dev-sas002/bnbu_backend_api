@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 from django.http import StreamingHttpResponse, Http404
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 import openai
 import PyPDF2
 from django.shortcuts import get_object_or_404
@@ -268,6 +268,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
             )
             
             analysis_result = response['choices'][0]['message']['content'].strip()
+            created_time = response.get('created')
+
+            # Ensure created_time is a string in ISO 8601 format
+            if isinstance(created_time, (int, float)):
+                created_time = datetime.fromtimestamp(created_time, tz=timezone.utc).isoformat()
 
             # Determine the status based on the analysis result
             if 'approved' in analysis_result.lower():
@@ -280,16 +285,20 @@ class DocumentViewSet(viewsets.ModelViewSet):
             # Store the GPT response as a text string in JSON format
             gpt_response_text = json.dumps({
                 "status": status,
-                "message": analysis_result
+                "message": analysis_result,
+                "created_time": created_time
             })
 
             # Store the response text in the document's gpt_response field
+            document.status = status
             document.gpt_response = gpt_response_text
+            document.gpt_created_time = created_time
             document.save()
 
             return {
                 'status': status,
-                'message': analysis_result
+                'message': analysis_result,
+                'created_time': created_time,
             }
 
         except Exception as e:
@@ -334,7 +343,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # Initialize the chat history
         chat_history = document.chat_history or []
-        chat_history.append({'role': 'user', 'content': user_message})
+        # Add the user's message with a timestamp
+        user_message_entry = {
+            'role': 'user',
+            'content': user_message,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        chat_history.append(user_message_entry)
 
         # Set up the OpenAI API key
         openai.api_key = settings.OPENAI_API_KEY
@@ -350,8 +365,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         gpt_response = response['choices'][0]['message']['content']
 
-        # Append the GPT response to the chat history
-        chat_history.append({'role': 'assistant', 'content': gpt_response})
+        # Append the GPT response with a timestamp to the chat history
+        gpt_response_entry = {
+            'role': 'assistant',
+            'content': gpt_response,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        chat_history.append(gpt_response_entry)
         document.chat_history = chat_history
         document.save()
 
@@ -360,4 +380,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'chat_history': chat_history,
             'summary': summary
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'], url_path='get-chat-history')
+    def get_chat_history(self, request, pk=None):
+        # Fetch the document
+        document = get_object_or_404(Document, id=pk)
+
+        # Fetch the GPT response and chat history from the document
+        gpt_response_data = document.gpt_response if document.gpt_response else {}
+        chat_history = document.chat_history or []
+
+        # Prepare the response data
+        response_data = {
+        'gpt_response': {
+            'message': gpt_response_data.get('message'),
+            'status': gpt_response_data.get('status'),
+            'created_time': gpt_response_data.get('created_time')
+        },
+        'chat_history': chat_history,
+    }
+
+        return Response(response_data, status=status.HTTP_200_OK)
     
