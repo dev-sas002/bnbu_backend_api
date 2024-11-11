@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
 from .models import Lease, Document
-from .serializers import LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
+from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsClientOrAdmin  # Import the custom permission class
 from django.utils import timezone
@@ -16,6 +16,7 @@ import openai
 import PyPDF2
 from django.shortcuts import get_object_or_404
 from django.conf import settings
+import json
 
 
 class LeaseViewSet(viewsets.ModelViewSet):
@@ -185,27 +186,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         ]
         
         return Response(document_names, status=status.HTTP_200_OK)
-    
-    # @action(detail=True, methods=['post'], url_path='review')
-    # def review_document(self, request, pk=None):
-    #     # Get the document object
-    #     document = get_object_or_404(Document, pk=pk)
-
-    #     # Check if the document has a file
-    #     if not document.file:
-    #         return Response({'detail': 'Document file not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-    #     # Extract text from the PDF file and send it to OpenAI for document review
-    #     response = self._analyze_document_with_gpt(document)
-
-    #     # Set the document status based on GPT's response
-    #     document.status = response['status']
-    #     document.save()
-
-    #     return Response({
-    #         'detail': f"Document reviewed and status set to {response['status']}",
-    #         'gpt_response': response
-    #     }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='review')
     def review_documents(self, request, pk=None):
@@ -228,6 +208,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
             # Set the document status based on GPT's response
             document.status = response['status']
+            document.gpt_response = response
             document.save()
 
             results.append({
@@ -237,46 +218,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             })
 
         return Response(results, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['post'], url_path='chat')
-    def chat_with_gpt(self, request, pk=None):
-        # Get the document object
-        document = get_object_or_404(Document, pk=pk)
-
-        user_message = request.data.get('message', '')
-
-        if not user_message:
-            return Response({'detail': 'Message is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Fetch document information to dynamically adjust the prompt
-        document_info = {
-            'name': document.name,
-            'status': document.status,
-            'version': document.version,
-            'uploaded_at': document.uploaded_at,
-        }
-
-        openai.api_key = settings.OPENAI_API_KEY
-
-        # Prepare the system prompt with document context
-        system_message = f"""
-        You are a helpful assistant specializing in lease document review. Here's the context for this document:
-        
-        Document Name: {document_info['name']}
-        Status: {document_info['status']}
-        Version: {document_info['version']}
-        Uploaded At: {document_info['uploaded_at']}
-        
-        The user may ask you questions about this document. Provide relevant responses based on the information above.
-        """
-
-        # Send the user message along with the dynamic context
-        response = self._chat_with_gpt(user_message, document)
-
-        return Response({
-            'response': response['message'],
-            'status': response['status']
-        }, status=status.HTTP_200_OK)
     
     def _analyze_document_with_gpt(self, document):
         # Extract text from the PDF file
@@ -290,52 +231,28 @@ class DocumentViewSet(viewsets.ModelViewSet):
             if not text:
                 raise ValueError("No text found in the document.")
 
-            # Retrieve lease details, including address fields
-            lease = document.lease  # Assuming the Document model has a ForeignKey to Lease
-            address_details = {
-                "address1": lease.address1,
-                "address2": lease.address2,
-                "city": lease.city,
-                "state": lease.state,
-                "zip_code": lease.zip_code
-            }
-
             openai.api_key = settings.OPENAI_API_KEY
             # Define the system message for the document analysis, including lease details
             system_message = f"""
-            The Lease Review API is designed to assist users in reviewing and managing lease documents, 
-            particularly for short-term rental agreements. The API provides tenant-centered insights, negotiation assistance, 
-            and status updates on each document's completion level. The key functions include analysis, chat support, document 
-            version comparison, and collaborative feedback. The following guidelines apply:
+            This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
+            The primary goal is to assist users in identifying unusual clauses, potential legal risks, and ensuring transparency within the lease documents. 
+            It will always identify key financial details such as rent amounts and security deposits from uploaded leases. 
+            Additionally, the GPT will carefully review the lease for unfavorable terms to the tenant, such as disproportionate fees, restrictions, or unclear responsibilities, 
+            and will make suggestions for favorable terms and strategies for negotiation. 
+            For example, it will suggest negotiating points such as reduced late fees, prorated rent for partial occupancy months, or limits on certain restrictions like subletting. 
+            It will also ensure that checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions. 
+            The length of the lease, any related fees, and responsibilities of both the landlord and tenant are key areas of focus. 
+            The GPT avoids giving direct legal advice but provides a thorough assessment to help the user feel confident in negotiating and signing a lease. 
+            It speaks in a formal and direct manner, ensuring clarity and professionalism in its assessments.
 
-            **Lease Details**:
-            - Property Address: {address_details['address1']}, {address_details['address2']}
-            - City: {address_details['city']}
-            - State: {address_details['state']}
-            - Zip Code: {address_details['zip_code']}
-
-            **Document Analysis Objective**:
-            - Review the document's terms including rent, tenant and landlord responsibilities, access rules, fees, and compliance.
-            - Use the address details in the summary, where applicable, to make the analysis specific to the property.
-            - Set a status of **Approved** if the document is clear and tenant-friendly, **Draft** if incomplete, or **Rejected** if there are high-risk issues.
-            - Recommend negotiation points where applicable, taking into account regulations and tenant rights.
-
-            **Additional Requirements**:
-            - Include any property-specific clauses that reference the property at {address_details['address1']} in the analysis.
-            - Answer as if you are reviewing the document for this specific property in {address_details['city']}, {address_details['state']}, {address_details['zip_code']}.
-            - Notify the user of any unreadable sections in the document.
-
-            - **Chat Functionality**:
-            - Users may ask questions; answers should reference prior responses for continuity and avoid redundancy.
-            - Advise on tenant protections and relevant lease requirements, focusing on legal considerations and tenant-friendly options.
-
-            - **Version Comparison**:
-            - When a new version is uploaded, compare with previous versions and summarize key changes.
-
-            - **Readability Check**:
-            - If sections are unreadable, notify the user specifying affected sections.
-
-            Please analyze the following document and provide a summary including its status and specific details for the property at {address_details['address1']}, {address_details['city']}, {address_details['state']}.
+            Please analyze the lease document and provide a clear assessment. 
+            Specifically, include a status for the lease: 
+            - "Approved" if the lease is favorable and there are no significant concerns.
+            - "Rejected" if there are major unfavorable clauses or legal risks.
+            - "Draft" if the lease is in an incomplete or negotiable state, and suggest any improvements or issues that need addressing.
+            
+            Please ensure the status is clearly mentioned in the response along with a summary of your findings.
+            
             Document Text:
             {text}
             """
@@ -359,6 +276,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 status = 'Rejected'
             else:
                 status = 'Draft'
+            
+            # Store the GPT response as a text string in JSON format
+            gpt_response_text = json.dumps({
+                "status": status,
+                "message": analysis_result
+            })
+
+            # Store the response text in the document's gpt_response field
+            document.gpt_response = gpt_response_text
+            document.save()
 
             return {
                 'status': status,
@@ -371,63 +298,66 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 'message': str(e)
             }
 
-    def _chat_with_gpt(self, user_message, document):
+
+    @action(detail=True, methods=['post'], url_path='chat')
+    def chat_with_gpt(self, request, pk=None):
+        # Validate input using GPTChatSerializer
+        serializer = GPTChatSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Extract validated data
+        document_id = serializer.validated_data.get('document_id')
+        user_message = serializer.validated_data.get('message')
+
+        # Fetch the document
+        document = get_object_or_404(Document, id=document_id)
+
+        # Fetch the summary from the document's GPT review response
+        gpt_response_data = document.gpt_response if document.gpt_response else {}
+        summary = gpt_response_data.get('message', 'No summary available. Please review the document first.')
+
+        # Prepare the system message with document context
+        system_message = f"""
+        You are a short-term rental contract expert designed to help users, especially students, review rental leases. Your primary goal is to assist users in identifying unusual clauses, potential legal risks, and ensuring transparency within the lease documents.
+
+        Key responsibilities include:
+        - Identifying critical financial details such as rent amounts and security deposits.
+        - Reviewing leases for unfavorable terms to the tenant, including disproportionate fees, restrictions, or unclear responsibilities.
+        - Making suggestions for favorable terms and negotiation strategies.
+        - Ensuring checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions.
+        - Focusing on key areas such as lease length, related fees, and responsibilities of both the landlord and tenant.
+
+        Review Summary: {summary}
+
+        The user may ask questions about this document. Provide relevant responses based on the review summary and chat history.
         """
-        Function to handle a chat with GPT for lease-related questions.
-        It dynamically adjusts based on the user's message and the document context.
-        """
-        try:
-            # Extract text from the document
-            with open(document.file.path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                text = ''
-                for page in reader.pages:
-                    text += page.extract_text()
 
-            if not text:
-                raise ValueError("No text found in the document.")
-            
-            openai.api_key = settings.OPENAI_API_KEY
+        # Initialize the chat history
+        chat_history = document.chat_history or []
+        chat_history.append({'role': 'user', 'content': user_message})
 
-            # Define the system message for dynamic lease-related questions
-            system_message = """
-            You are an expert assistant specializing in lease document review. The following lease document is provided,
-            and your task is to answer user questions based on the content of the document. Your answers should be clear,
-            concise, and reflect the information contained in the document. You may assist with questions on:
+        # Set up the OpenAI API key
+        openai.api_key = settings.OPENAI_API_KEY
 
-            - Rent payment terms
-            - Tenant and landlord responsibilities
-            - Lease duration and termination clauses
-            - Fees, deposits, or other financial obligations
-            - Specific conditions (such as pets, maintenance, etc.)
-            - Any unclear or missing sections that need clarification
-
-            **Guidelines for answering:**
-            - Reference specific sections or clauses in the document if applicable.
-            - If a section is unclear, mention it and suggest clarification.
-            - If the document lacks certain information (such as rent payment details), mention that.
-            - Focus on helping the user understand their rights and obligations under the lease.
-            
-            **Note**: Always base your responses on the provided lease document. If the document doesn't address the user's question directly, inform them accordingly.
-            """
-
-            # Combine the system message with the user input and document text
-            conversation_history = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"User is asking the following question about the lease document:\n\n{user_message}\n\nHere is the document content:\n{text}"}
+        # Generate a response using OpenAI's GPT model
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {'role': 'system', 'content': system_message},
+                *chat_history
             ]
+        )
 
-            # Call OpenAI API for dynamic chat interaction
-            response = openai.ChatCompletion.create(
-                model=settings.MODEL_NAME,
-                messages=conversation_history,
-                temperature=0.7,
-            )
+        gpt_response = response['choices'][0]['message']['content']
 
-            # Parse the response from GPT
-            message = response['choices'][0]['message']['content'].strip()
+        # Append the GPT response to the chat history
+        chat_history.append({'role': 'assistant', 'content': gpt_response})
+        document.chat_history = chat_history
+        document.save()
 
-            return {'message': message, 'status': 'success'}
-
-        except Exception as e:
-            return {'message': str(e), 'status': 'error'}
+        return Response({
+            'response': gpt_response,
+            'chat_history': chat_history,
+            'summary': summary
+        }, status=status.HTTP_200_OK)
+    

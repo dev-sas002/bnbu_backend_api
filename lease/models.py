@@ -43,6 +43,8 @@ class Document(models.Model):
     version = models.PositiveIntegerField(default=1)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    gpt_response = models.JSONField(blank=True, null=True) 
+    chat_history = models.JSONField(default=list, blank=True, null=True) 
 
     def save(self, *args, **kwargs):
         # Set the version number to the next version if it's a new document for the lease
