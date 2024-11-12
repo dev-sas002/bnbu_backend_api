@@ -7,7 +7,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at']
+        fields = ['id', 'lease_id', 'name', 'file', 'version', 'uploaded_at' ,'status', 'gpt_response', 'chat_history']
 
 class LeaseSerializer(serializers.ModelSerializer):
     num_of_docs = serializers.IntegerField(read_only=True)
@@ -48,8 +48,22 @@ class RevisedLeaseUploadSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         documents = validated_data.pop('documents', [])
+        created_document_ids = []
+
+        # Create Document instances and collect their IDs
         for doc in documents:
-            Document.objects.create(lease=instance, file=doc, name=doc.name)
-        return instance
+            document = Document.objects.create(lease=instance, file=doc, name=doc.name)
+            created_document_ids.append(document.id)
+
+        # Return the document IDs
+        return created_document_ids
+    
+class GPTChatSerializer(serializers.Serializer):
+    message = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        help_text="Enter your message or prompt to interact with the GPT model."
+    )
+    document_id = serializers.IntegerField(required=True)
     
 
