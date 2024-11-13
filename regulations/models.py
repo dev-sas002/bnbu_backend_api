@@ -12,9 +12,10 @@ class Regulations(models.Model):
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='regulations')
     date = models.DateField(auto_now_add=True)
-    address = models.CharField(max_length=255)
-    city = models.CharField(max_length=255)
-    area = models.CharField(max_length=255)
+    search = models.CharField(max_length=255)
+    # address = models.CharField(max_length=255)
+    # city = models.CharField(max_length=255)
+    # area = models.CharField(max_length=255)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     gpt_response = models.JSONField(blank=True, null=True) 

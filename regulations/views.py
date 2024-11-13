@@ -18,8 +18,8 @@ from rest_framework.decorators import action
 class RegulationsViewSet(viewsets.ModelViewSet):
     queryset = Regulations.objects.all().order_by('-created_at')
     filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
-    search_fields = ['address', 'city', 'area']
-    filterset_fields = ['status', 'city', 'area']
+    search_fields = ['search', 'status']
+    filterset_fields = ['search', 'status']
     permission_classes = [IsAuthenticated, IsClientOrAdmin]
     pagination_class = PageNumberPagination
     serializer_class = RegulationsSerializer
@@ -64,9 +64,7 @@ class RegulationsViewSet(viewsets.ModelViewSet):
                 """
         user_input = f"""
         Analyze the legality of short-term rentals for the following details:
-        - Address: {regulation.address if regulation.address else 'N/A'}
-        - City: {regulation.city}
-        - Area: {regulation.area if regulation.area else 'N/A'}
+        - Search: {regulation.search}
         """
 
         try:
@@ -201,15 +199,25 @@ class RegulationsViewSet(viewsets.ModelViewSet):
         """
         regulation = get_object_or_404(Regulations, id=pk)
 
-        gpt_response_data = regulation.gpt_response if regulation.gpt_response else []
-        chat_history = regulation.chat_history or []
-
-        response_data = {
-            'gpt_response':{
+        gpt_response_data = regulation.gpt_response if regulation.gpt_response else {}
+        # Ensure gpt_response_data is a dictionary before accessing its keys
+        if isinstance(gpt_response_data, dict):
+            gpt_response = {
                 'message': gpt_response_data.get('message'),
                 'status': gpt_response_data.get('status'),
                 'timestamp': gpt_response_data.get('timestamp')
-            },
+            }
+        else:
+            gpt_response = {
+                'message': None,
+                'status': None,
+                'timestamp': None
+            }
+
+        chat_history = regulation.chat_history or []
+
+        response_data = {
+            'gpt_response': gpt_response,
             'chat_history': chat_history,
         }
         return Response(response_data, status=status.HTTP_200_OK)
@@ -228,13 +236,10 @@ class RegulationsViewSet(viewsets.ModelViewSet):
         # Initial queryset
         regulations = Regulations.objects.all()
 
-        # Filter by address, city, or area if a query term is provided
+        # Filter by search
         if query:
-            regulations = regulations.filter(
-                Q(address__icontains=query) |
-                Q(city__icontains=query) |
-                Q(area__icontains=query)
-            )
+          regulations = regulations.filter(search__icontains=query)
+
 
         # Filter by created_at for date range
         if start_date:

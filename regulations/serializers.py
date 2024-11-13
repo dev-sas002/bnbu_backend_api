@@ -5,20 +5,20 @@ from .models import Regulations
 class RegulationsSerializer(serializers.ModelSerializer):
     class Meta:
         model = Regulations
-        fields = ['id', 'date', 'address', 'city', 'area', 'status', 'gpt_response', 'chat_history']
+        fields = ['id', 'date', 'search', 'status', 'gpt_response', 'chat_history']
 
     # Explicitly mark address and area as optional
-    address = serializers.CharField(required=False, allow_blank=True)
-    area = serializers.CharField(required=False, allow_blank=True)
+    # address = serializers.CharField(required=False, allow_blank=True)
+    # area = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
         # Ensure the 'city' field is provided
-        if not data.get('city'):
+        if not data.get('search'):
             raise ValidationError('The city field is required.')
 
         # Ensure at least one of address or area is provided
-        if not data.get('address') and not data.get('area'):
-            raise ValidationError('At least one of address or area must be provided.')
+        # if not data.get('address') and not data.get('area'):
+        #     raise ValidationError('At least one of address or area must be provided.')
 
         return data
 
