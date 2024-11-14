@@ -31,7 +31,7 @@ SECRET_KEY = 'django-insecure-5p2vd+76v$y@=ew$t0wt(00m3qyv@vsty^^p)xiaqb@0-t=fy@
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["staging-tool-bnb-488e79ceb030.herokuapp.com"]
 
 
 # Application definition
