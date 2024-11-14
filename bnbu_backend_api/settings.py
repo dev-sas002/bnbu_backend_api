@@ -14,6 +14,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
+import dj_database_url
 
 load_dotenv()
 
@@ -22,16 +23,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATIC_URL = '/static/'
 
+# Determine the environment: development, staging
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-5p2vd+76v$y@=ew$t0wt(00m3qyv@vsty^^p)xiaqb@0-t=fy@'
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ["staging-tool-bnb-488e79ceb030.herokuapp.com"]
+# ALLOWED_HOSTS = ["staging-tool-bnb-488e79ceb030.herokuapp.com"]
+
+# ALLOWED_HOSTS setting
+if ENVIRONMENT == 'staging':
+    ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -98,16 +107,21 @@ WSGI_APPLICATION = 'bnbu_backend_api.wsgi.application'
 #     }
 # }
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'bnbu_backend_api_db',
-        'USER': 'bnbu_admin',
-        'PASSWORD': 'admin',
-        'HOST': 'localhost',  # Set to 'localhost' or '127.0.0.1'
-        'PORT': '',  # Leave empty for default port 5432
+# Database configuration
+if ENVIRONMENT == 'staging':
+    # Use DATABASE_URL environment variable for staging
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.getenv('STAGING_DATABASE_URL')
+        )
     }
-}
+else:
+    # Default development database settings (override with DATABASE_URL if available)
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.getenv('DATABASE_URL', 'postgres://dev_user:dev_password@localhost:5432/dev_database')
+        )
+    }
 
 
 
@@ -180,11 +194,7 @@ SIMPLE_JWT = {
 }
 
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    # "http://127.0.0.1:3000",
-]
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
 
 AUTHENTICATION_BACKENDS = [
   'accounts.backends.EmailBackend', 
