@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import json
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
@@ -194,7 +195,7 @@ SIMPLE_JWT = {
 }
 
 
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+CORS_ALLOWED_ORIGINS = json.loads(os.getenv('CORS_ALLOWED_ORIGINS', '[]'))
 
 AUTHENTICATION_BACKENDS = [
   'accounts.backends.EmailBackend', 
