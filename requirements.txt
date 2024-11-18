@@ -44,3 +44,4 @@ urllib3==2.2.3
 whitenoise==6.8.2
 yarl==1.17.1
 dj-database-url==2.3.0
+tiktoken
