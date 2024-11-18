@@ -1,3 +1,5 @@
+import time
+import tiktoken
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -220,18 +222,29 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(results, status=status.HTTP_200_OK)
     
     def _analyze_document_with_gpt(self, document):
-        # Extract text from the PDF file
         try:
+            # Extract text from the PDF file
             with open(document.file.path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
-                text = ''
-                for page in reader.pages:
-                    text += page.extract_text()
+                num_pages = len(reader.pages)
+                chunk_size = 5  # Max pages per chunk for large documents
+                chunks = []
 
-            if not text:
+                # Split the document into chunks of pages
+                for i in range(0, num_pages, chunk_size):
+                    chunk_text = ''
+                    for j in range(i, min(i + chunk_size, num_pages)):
+                        chunk_text += reader.pages[j].extract_text()
+                    chunks.append(chunk_text)
+
+            if not chunks:
                 raise ValueError("No text found in the document.")
 
+            # Initialize OpenAI API
             openai.api_key = settings.OPENAI_API_KEY
+            encoding = tiktoken.get_encoding("cl100k_base")
+            time_to_wait = 0
+
             # Define the system message for the document analysis, including lease details
             system_message = f"""
             This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
@@ -252,23 +265,67 @@ class DocumentViewSet(viewsets.ModelViewSet):
             - "Draft" if the lease is in an incomplete or negotiable state, and suggest any improvements or issues that need addressing.
             
             Please ensure the status is clearly mentioned in the response along with a summary of your findings.
-            
-            Document Text:
-            {text}
             """
 
+            chunk_summaries = []
 
-            # Call OpenAI API with the system message
-            response = openai.ChatCompletion.create(
+            # Process each chunk and summarize if needed
+            for chunk in chunks:
+                if time_to_wait > 0:
+                    time.sleep(time_to_wait)
+
+                chunk_tokens = len(encoding.encode(chunk))
+
+                # If chunk exceeds token limit, summarize it
+                if chunk_tokens > 4096:
+                    summary_response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": "Please summarize the following text to fit within the token limit."},
+                            {"role": "user", "content": chunk}
+                        ]
+                    )
+                    chunk_summary = summary_response['choices'][0]['message']['content']
+                else:
+                    # Analyze the chunk directly
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": system_message},
+                            {"role": "user", "content": chunk}
+                        ]
+                    )
+                    chunk_summary = response['choices'][0]['message']['content']
+
+                chunk_summaries.append(chunk_summary)
+                time_to_wait = 20  # Throttle to avoid rate limits
+
+            # Combine all chunk summaries
+            combined_summary = " ".join(chunk_summaries)
+            combined_tokens = len(encoding.encode(combined_summary))
+
+            # If the combined summary is still too long, summarize it
+            if combined_tokens > 4096:
+                final_summary_response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "Please summarize the following document to fit within the token limit."},
+                        {"role": "user", "content": combined_summary}
+                    ]
+                )
+                combined_summary = final_summary_response['choices'][0]['message']['content']
+
+            # Final analysis on the combined summary
+            final_analysis_response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": "Please review this document and determine its status."}
+                    {"role": "user", "content": combined_summary}
                 ]
             )
             
-            analysis_result = response['choices'][0]['message']['content'].strip()
-            created_time = response.get('created')
+            analysis_result = final_analysis_response['choices'][0]['message']['content'].strip()
+            created_time = final_analysis_response.get('created')
 
             # Ensure created_time is a string in ISO 8601 format
             if isinstance(created_time, (int, float)):
