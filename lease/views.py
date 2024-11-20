@@ -1,10 +1,10 @@
-import time
-import tiktoken
+# /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/views.py
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
+from lease.tasks import analyze_document_with_gpt_task
 from .models import Lease, Document
 from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -205,179 +205,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 results.append({'document_id': document_id, 'detail': 'Document file not found.'})
                 continue
 
-            # Extract text from the PDF file and send it to OpenAI for document review
-            response = self._analyze_document_with_gpt(document)
+            # Enqueue the Celery task for document analysis
+            task_result = analyze_document_with_gpt_task.apply_async(args=[document_id])
+            task_result.get()  # Wait for the task to complete and retrieve the result
 
-            # Set the document status based on GPT's response
-            document.status = response['status']
-            document.gpt_response = response
+            # Retrieve the task result and set document fields
+            gpt_response = task_result.result  # Assuming the task returns a dictionary with the required fields
+            document.status = gpt_response.get('status', 'Unknown')  # Update the document status
+            document.gpt_response = gpt_response
             document.save()
 
+            # Append the document's review details to the results
             results.append({
                 'document_id': document_id,
-                'detail': f"Document reviewed and status set to {response['status']}",
-                'gpt_response': response
+                'status': gpt_response.get('status', 'Unknown'),
+                'message': gpt_response.get('message', 'No response available.'),
+                'created_time': gpt_response.get('created_time', 'Unknown'),
             })
 
         return Response(results, status=status.HTTP_200_OK)
-    
-    def _analyze_document_with_gpt(self, document):
-        try:
-            # Extract text from the PDF file
-            with open(document.file.path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                num_pages = len(reader.pages)
-                chunk_size = 5  # Max pages per chunk for large documents
-                chunks = []
-
-                # Split the document into chunks of pages
-                for i in range(0, num_pages, chunk_size):
-                    chunk_text = ''
-                    for j in range(i, min(i + chunk_size, num_pages)):
-                        chunk_text += reader.pages[j].extract_text()
-                    chunks.append(chunk_text)
-
-            if not chunks:
-                raise ValueError("No text found in the document.")
-
-            # Initialize OpenAI API
-            openai.api_key = settings.OPENAI_API_KEY
-            encoding = tiktoken.get_encoding("cl100k_base")
-            time_to_wait = 0
-
-            # Define the system message for the document analysis, including lease details
-            system_message = f"""
-            This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
-            The primary goal is to assist users in identifying unusual clauses, potential legal risks, and ensuring transparency within the lease documents. 
-            It will always identify key financial details such as rent amounts and security deposits from uploaded leases. 
-            Additionally, the GPT will carefully review the lease for unfavorable terms to the tenant, such as disproportionate fees, restrictions, or unclear responsibilities, 
-            and will make suggestions for favorable terms and strategies for negotiation. 
-            For example, it will suggest negotiating points such as reduced late fees, prorated rent for partial occupancy months, or limits on certain restrictions like subletting. 
-            It will also ensure that checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions. 
-            The length of the lease, any related fees, and responsibilities of both the landlord and tenant are key areas of focus. 
-            
-            As part of the detailed review, the following critical details will be included:
-            - **Property Address**: Clearly mention the property address included in the lease.
-            - **Landlord Details**: Include the name, contact information, and responsibilities of the landlord.
-            - **Tenant Details**: Include the name and obligations of the tenant.
-            - **Key Financial Terms**: Specify rent amount, security deposit, payment schedule, late fees, and any additional charges.
-            - **Lease Duration**: State the start date, end date, and terms for renewal or termination.
-            - **Responsibilities**: Clarify maintenance responsibilities, utilities coverage, and any shared responsibilities between landlord and tenant.
-            - **Unusual Clauses or Legal Risks**: Highlight clauses that may pose risks or are unusual/unfavorable to the tenant.
-            - **Recommendations for Improvements**: Provide suggestions for negotiation or clarifications where needed.
-            - **Checkbox Provisions**: Ensure provisions regarding subleasing, assignments, and permissions are clear.
-            - **Additional Fees**: Mention any additional fees or charges, such as property taxes or insurance.
-            - **Other Relevant Information**: Include any other relevant information or details that may be helpful for the user.
-            
-            The GPT avoids giving direct legal advice but provides a thorough assessment to help the user feel confident in negotiating and signing a lease. 
-            It speaks in a formal and direct manner, ensuring clarity and professionalism in its assessments.
-
-            Please analyze the lease document and provide a clear assessment. 
-            Specifically, include a status for the lease: 
-            - "Approved" if the lease is favorable and there are no significant concerns.
-            - "Rejected" if there are major unfavorable clauses or legal risks.
-            - "Draft" if the lease is in an incomplete or negotiable state, and suggest any improvements or issues that need addressing.
-            
-            Please ensure the status is clearly mentioned in the response along with a summary of your findings.
-            """
-
-            chunk_summaries = []
-
-            # Process each chunk and summarize if needed
-            for chunk in chunks:
-                if time_to_wait > 0:
-                    time.sleep(time_to_wait)
-
-                chunk_tokens = len(encoding.encode(chunk))
-
-                # If chunk exceeds token limit, summarize it
-                if chunk_tokens > 4096:
-                    summary_response = openai.ChatCompletion.create(
-                        model="gpt-4",
-                        messages=[
-                            {"role": "system", "content": "Please summarize the following text to fit within the token limit."},
-                            {"role": "user", "content": chunk}
-                        ]
-                    )
-                    chunk_summary = summary_response['choices'][0]['message']['content']
-                else:
-                    # Analyze the chunk directly
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4",
-                        messages=[
-                            {"role": "system", "content": system_message},
-                            {"role": "user", "content": chunk}
-                        ]
-                    )
-                    chunk_summary = response['choices'][0]['message']['content']
-
-                chunk_summaries.append(chunk_summary)
-                time_to_wait = 20  # Throttle to avoid rate limits
-
-            # Combine all chunk summaries
-            combined_summary = " ".join(chunk_summaries)
-            combined_tokens = len(encoding.encode(combined_summary))
-
-            # If the combined summary is still too long, summarize it
-            if combined_tokens > 4096:
-                final_summary_response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "Please summarize the following document to fit within the token limit."},
-                        {"role": "user", "content": combined_summary}
-                    ]
-                )
-                combined_summary = final_summary_response['choices'][0]['message']['content']
-
-            # Final analysis on the combined summary
-            final_analysis_response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": combined_summary}
-                ]
-            )
-            
-            analysis_result = final_analysis_response['choices'][0]['message']['content'].strip()
-            created_time = final_analysis_response.get('created')
-
-            # Ensure created_time is a string in ISO 8601 format
-            if isinstance(created_time, (int, float)):
-                created_time = datetime.fromtimestamp(created_time, tz=timezone.utc).isoformat()
-
-            # Determine the status based on the analysis result
-            if 'approved' in analysis_result.lower():
-                status = 'Approved'
-            elif 'rejected' in analysis_result.lower():
-                status = 'Rejected'
-            else:
-                status = 'Draft'
-            
-            # Store the GPT response as a text string in JSON format
-            gpt_response_text = json.dumps({
-                "status": status,
-                "message": analysis_result,
-                "created_time": created_time
-            })
-
-            # Store the response text in the document's gpt_response field
-            document.status = status
-            document.gpt_response = gpt_response_text
-            document.gpt_created_time = created_time
-            document.save()
-
-            return {
-                'status': status,
-                'message': analysis_result,
-                'created_time': created_time,
-            }
-
-        except Exception as e:
-            return {
-                'status': 'Error',
-                'message': str(e)
-            }
-
 
     @action(detail=True, methods=['post'], url_path='chat')
     def chat_with_gpt(self, request, pk=None):
@@ -454,22 +300,32 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'], url_path='get-chat-history')
     def get_chat_history(self, request, pk=None):
-        # Fetch the document
+        """
+        Retrieve chat history for a specific regulation.
+        """
         document = get_object_or_404(Document, id=pk)
 
-        # Fetch the GPT response and chat history from the document
         gpt_response_data = document.gpt_response if document.gpt_response else {}
+
+        # Ensure gpt_response_data is a dictionary before accessing its keys
+        if isinstance(gpt_response_data, dict):
+            gpt_response = {
+                'message': gpt_response_data.get('message'),
+                'status': gpt_response_data.get('status'),
+                'timestamp': gpt_response_data.get('timestamp')
+            }
+        else:
+            gpt_response = {
+                'message': None,
+                'status': None,
+                'timestamp': None
+            }
+
         chat_history = document.chat_history or []
 
-        # Prepare the response data
         response_data = {
-        'gpt_response': {
-            'message': gpt_response_data.get('message'),
-            'status': gpt_response_data.get('status'),
-            'created_time': gpt_response_data.get('created_time')
-        },
-        'chat_history': chat_history,
-    }
-
+            'gpt_response': gpt_response,
+            'chat_history': chat_history,
+        }
         return Response(response_data, status=status.HTTP_200_OK)
     
