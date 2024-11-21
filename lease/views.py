@@ -294,6 +294,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 time.sleep(time_to_wait)
             chunk_summaries = group_results.get()  # Wait for results
 
+            # If chunk_summaries contains dictionaries, extract the string message part
+            chunk_summaries = [result.get('message', '') if isinstance(result, dict) else str(result) for result in chunk_summaries]
 
             # Combine all chunk summaries
             combined_summary = " ".join(chunk_summaries)
