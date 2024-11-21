@@ -1,21 +1,37 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/tasks.py
-
-from .models import Document
+from __future__ import absolute_import, unicode_literals
 from celery import shared_task
-from lease.utils import analyze_document_with_gpt
+import openai
+import tiktoken
+from django.conf import settings
 
-@shared_task
-def analyze_document_with_gpt_task(document_id):
+@shared_task(bind=True)
+def analyze_chunk(self, chunk, system_message):
     try:
-        # Fetch the document
-        document = Document.objects.get(id=document_id)
+        openai.api_key = settings.OPENAI_API_KEY
+        encoding = tiktoken.get_encoding("cl100k_base")
+        
+        chunk_tokens = len(encoding.encode(chunk))
 
-        # Perform analysis
-        result = analyze_document_with_gpt(document)
-
-        # Return the result without updating the document here
-        return result
-
+        # Summarize if the chunk exceeds token limit
+        if chunk_tokens > 4096:
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Please summarize the following text to fit within the token limit."},
+                    {"role": "user", "content": chunk}
+                ]
+            )
+            return response['choices'][0]['message']['content']
+        else:
+            # Analyze the chunk directly
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": chunk}
+                ]
+            )
+            return response['choices'][0]['message']['content']
     except Exception as e:
-        # Handle errors gracefully
-        return {'status': 'Error', 'message': str(e)}
+        return str(e)
