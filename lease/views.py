@@ -260,22 +260,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             It will also ensure that checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions. 
             The length of the lease, any related fees, and responsibilities of both the landlord and tenant are key areas of focus. 
             
-            As part of the detailed review, the following critical details will be included:
-            - **Property Address**: Clearly mention the property address included in the lease.
-            - **Landlord Details**: Include the name, contact information, and responsibilities of the landlord.
-            - **Tenant Details**: Include the name and obligations of the tenant.
-            - **Key Financial Terms**: Specify rent amount, security deposit, payment schedule, late fees, and any additional charges.
-            - **Lease Duration**: State the start date, end date, and terms for renewal or termination.
-            - **Responsibilities**: Clarify maintenance responsibilities, utilities coverage, and any shared responsibilities between landlord and tenant.
-            - **Unusual Clauses or Legal Risks**: Highlight clauses that may pose risks or are unusual/unfavorable to the tenant.
-            - **Recommendations for Improvements**: Provide suggestions for negotiation or clarifications where needed.
-            - **Checkbox Provisions**: Ensure provisions regarding subleasing, assignments, and permissions are clear.
-            - **Additional Fees**: Mention any additional fees or charges, such as property taxes or insurance.
-            - **Other Relevant Information**: Include any other relevant information or details that may be helpful for the user.
-            
-            The GPT avoids giving direct legal advice but provides a thorough assessment to help the user feel confident in negotiating and signing a lease. 
-            It speaks in a formal and direct manner, ensuring clarity and professionalism in its assessments.
-
             Please analyze the lease document and provide a clear assessment. 
             Specifically, include a status for the lease: 
             - "Approved" if the lease is favorable and there are no significant concerns.
@@ -404,36 +388,37 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         chat_history.append(user_message_entry)
+        try:
+            # Generate GPT response
+            openai.api_key = settings.OPENAI_API_KEY
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {'role': 'system', 'content': system_message},
+                    *chat_history
+                ]
+            )
 
-        # Set up the OpenAI API key
-        openai.api_key = settings.OPENAI_API_KEY
+            gpt_response = response['choices'][0]['message']['content']
 
-        # Generate a response using OpenAI's GPT model
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {'role': 'system', 'content': system_message},
-                *chat_history
-            ]
-        )
+            # Append the GPT response with a timestamp to the chat history
+            gpt_response_entry = {
+                'role': 'assistant',
+                'content': gpt_response,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            chat_history.append(gpt_response_entry)
+            document.chat_history = chat_history
+            document.save()
 
-        gpt_response = response['choices'][0]['message']['content']
-
-        # Append the GPT response with a timestamp to the chat history
-        gpt_response_entry = {
-            'role': 'assistant',
-            'content': gpt_response,
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        }
-        chat_history.append(gpt_response_entry)
-        document.chat_history = chat_history
-        document.save()
-
-        return Response({
-            'response': gpt_response,
-            'chat_history': chat_history,
-            'summary': summary
-        }, status=status.HTTP_200_OK)
+            return Response({
+                'response': gpt_response,
+                'chat_history': chat_history,
+                'summary': summary
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'], url_path='get-chat-history')
     def get_chat_history(self, request, pk=None):
@@ -449,7 +434,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             gpt_response = {
                 'message': gpt_response_data.get('message'),
                 'status': gpt_response_data.get('status'),
-                'timestamp': gpt_response_data.get('timestamp')
+                'timestamp': gpt_response_data.get('created_time')
             }
         else:
             gpt_response = {
