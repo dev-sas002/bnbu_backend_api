@@ -205,7 +205,7 @@ class RegulationsViewSet(viewsets.ModelViewSet):
             gpt_response = {
                 'message': gpt_response_data.get('message'),
                 'status': gpt_response_data.get('status'),
-                'timestamp': gpt_response_data.get('timestamp')
+                'timestamp': gpt_response_data.get('created_time')
             }
         else:
             gpt_response = {

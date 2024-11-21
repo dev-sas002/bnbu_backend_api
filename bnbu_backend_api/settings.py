@@ -215,3 +215,16 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME")
 
+# Celery Configuration
+if ENVIRONMENT == 'staging':
+    CELERY_BROKER_URL = os.getenv('STAGING_CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    CELERY_RESULT_BACKEND = os.getenv('STAGING_CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+else:
+    CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = os.getenv('CELERY_TIMEZONE', 'UTC')
+
