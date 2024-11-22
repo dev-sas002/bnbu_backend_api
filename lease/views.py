@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
 import tiktoken
-from .tasks import analyze_chunk
+from .tasks import analyze_chunk, process_analysis_results
 from .models import Lease, Document
 from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -243,12 +243,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
             if not chunks:
                 raise ValueError("No text found in the document.")
-
-            # Initialize OpenAI API
-            openai.api_key = settings.OPENAI_API_KEY
-            encoding = tiktoken.get_encoding("cl100k_base")
-            time_to_wait = 0
-
             # Define the system message for the document analysis, including lease details
             system_message = f"""
             This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
@@ -269,75 +263,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
             Please ensure the status is clearly mentioned in the response along with a summary of your findings.
             """
 
-            time_to_wait = 20  # Throttle to avoid rate limits
-
             # Trigger Celery tasks in parallel for each chunk
             group_results = group(analyze_chunk.s(chunk, system_message) for chunk in chunks)()
-            # Wait for results and apply throttling
-            if time_to_wait > 0:
-                time.sleep(time_to_wait)
-            chunk_summaries = group_results.get()  # Wait for results
+            # print("Group Results:", group_results)
 
-            # If chunk_summaries contains dictionaries, extract the string message part
-            chunk_summaries = [result.get('message', '') if isinstance(result, dict) else str(result) for result in chunk_summaries]
+            # Wait for the group results to finish
+            result = group_results.get()  
 
-            # Combine all chunk summaries
-            combined_summary = " ".join(chunk_summaries)
-            combined_tokens = len(encoding.encode(combined_summary))
+            # Now the result is a list of results from the individual tasks
+            # print("Individual Task Results:", result)
 
-            # If the combined summary is still too long, summarize it
-            if combined_tokens > 4096:
-                final_summary_response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "Please summarize the following document to fit within the token limit."},
-                        {"role": "user", "content": combined_summary}
-                    ]
-                )
-                combined_summary = final_summary_response['choices'][0]['message']['content']
-
-            # Final analysis on the combined summary
-            final_analysis_response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": combined_summary}
-                ]
+            # Now you can pass these results into the analysis task
+            async_result = process_analysis_results.apply_async(
+                args=[document.id, result],
+                countdown=1  # Slight delay to ensure tasks start first
             )
-            
-            analysis_result = final_analysis_response['choices'][0]['message']['content'].strip()
-            created_time = final_analysis_response.get('created')
 
-            # Ensure created_time is a string in ISO 8601 format
-            if isinstance(created_time, (int, float)):
-                created_time = datetime.fromtimestamp(created_time, tz=timezone.utc).isoformat()
+            # Wait for the final analysis result
+            final_result = async_result.get()  # Wait for final result
+            # print("Final Analysis Result:", final_result)
 
-            # Determine the status based on the analysis result
-            if 'approved' in analysis_result.lower():
-                status = 'Approved'
-            elif 'rejected' in analysis_result.lower():
-                status = 'Rejected'
-            else:
-                status = 'Draft'
-            
-            # Store the GPT response as a text string in JSON format
-            gpt_response_text = json.dumps({
-                "status": status,
-                "message": analysis_result,
-                "created_time": created_time
-            })
-
-            # Store the response text in the document's gpt_response field
-            document.status = status
-            document.gpt_response = gpt_response_text
-            document.gpt_created_time = created_time
-            document.save()
-
-            return {
-                'status': status,
-                'message': analysis_result,
-                'created_time': created_time,
-            }
+            return final_result
 
         except Exception as e:
             return {
