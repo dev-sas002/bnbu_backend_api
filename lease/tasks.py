@@ -51,6 +51,11 @@ def process_analysis_results(document_id, chunk_summaries):
 
     try:
         # Combine all chunk summaries
+        error_chunks = [chunk for chunk in chunk_summaries if isinstance(chunk, dict) and chunk.get('status') == 'Error']
+        if error_chunks:
+            error_messages = "; ".join(chunk.get('message', 'Unknown error') for chunk in error_chunks)
+            raise ValueError(f"Errors in chunks: {error_messages}")
+        
         combined_summary = " ".join(
             result.get('message', '') if isinstance(result, dict) else str(result)
             for result in chunk_summaries
@@ -110,22 +115,37 @@ def process_analysis_results(document_id, chunk_summaries):
         else:
             status = 'Draft'
 
-        # Save the results back to the document
-        gpt_response_text = json.dumps({
+
+
+        # # Save the results back to the document
+        # gpt_response_text = json.dumps({
+        #     "status": status,
+        #     "message": analysis_result,
+        #     "created_time": created_time
+        # })
+        # document.status = status
+        # document.gpt_response = gpt_response_text
+        # document.gpt_created_time = created_time
+        # document.save()
+
+        # return {
+        #         'status': status,
+        #         'message': analysis_result,
+        #         'created_time': created_time,
+        # }
+        
+        
+        # Save results in the database
+        document.status = status
+        document.gpt_response = json.dumps({
             "status": status,
             "message": analysis_result,
             "created_time": created_time
         })
-        document.status = status
-        document.gpt_response = gpt_response_text
         document.gpt_created_time = created_time
         document.save()
 
-        return {
-                'status': status,
-                'message': analysis_result,
-                'created_time': created_time,
-        }
+        return {"status": status, "message": analysis_result}
 
     except Exception as e:
         document.status = "Error"
