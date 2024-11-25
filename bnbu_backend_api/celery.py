@@ -16,16 +16,22 @@ app.conf.update(
     broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
     result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
     broker_use_ssl={
-        'ssl_cert_reqs': ssl.CERT_NONE  # Disable certificate validation
+        'ssl_cert_reqs': ssl.CERT_REQUIRED  # Disable certificate validation
     },
     redis_backend_use_ssl={
-        'ssl_cert_reqs': ssl.CERT_NONE  # Disable certificate validation
+        'ssl_cert_reqs': ssl.CERT_REQUIRED  # Disable certificate validation
     },
 
     accept_content=['json'],  # Ensure compatibility
     task_serializer='json',
     result_serializer='json'
 )
+
+app.conf.broker_transport_options = {
+    'socket_timeout': 30,  # Timeout for Redis operations in seconds
+    'socket_connect_timeout': 30,  # Timeout for connection attempts
+    'max_connections': 10  # Limit concurrent connections
+}
 
 # Add the configuration for retrying broker connection on startup
 app.conf.broker_connection_retry_on_startup = True

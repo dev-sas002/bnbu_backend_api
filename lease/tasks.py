@@ -9,7 +9,7 @@ from django.conf import settings
 import time
 from .models import Document
 
-@shared_task(bind=True, max_retries=5)
+@shared_task(bind=True, max_retries=2)
 def analyze_chunk(self, chunk, system_message):
     try:
         openai.api_key = settings.OPENAI_API_KEY
