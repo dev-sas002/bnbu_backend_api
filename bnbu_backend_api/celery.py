@@ -16,12 +16,10 @@ app.conf.update(
     broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
     result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
     broker_use_ssl={
-        'ssl_cert_reqs': ssl.CERT_REQUIRED,
-        'ssl_ca_certs': '/etc/ssl/certs/ca-certificates.crt',
+        'ssl_cert_reqs': ssl.CERT_NONE,
     },
     redis_backend_use_ssl={
-        'ssl_cert_reqs': ssl.CERT_REQUIRED ,
-        'ssl_ca_certs': '/etc/ssl/certs/ca-certificates.crt',
+        'ssl_cert_reqs': ssl.CERT_NONE ,
     },
 
     accept_content=['json'],  # Ensure compatibility
