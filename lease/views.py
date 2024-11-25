@@ -227,6 +227,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     def _analyze_document_with_gpt(self, document):
         try:
+            if document.status in ["Approved", "Rejected", "Draft", "Error"]:
+                return {
+                    'status': document.status,
+                    'message': json.loads(document.gpt_response).get('message', 'No message available')
+                }
+                
             # Extract text from the PDF file
             with open(document.file.path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
@@ -279,13 +285,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 countdown=1  # Slight delay to ensure tasks start first
             )
 
+            return {
+                'status': 'Pending',
+                'message': 'Analysis is in progress. Refresh the page for updates.'
+            }
+
             # Wait for the final analysis result
-            final_result = async_result.get()  # Wait for final result
+            # final_result = async_result.get()  # Wait for final result
             # print("Final Analysis Result:", final_result)
 
-            return final_result
+            # return final_result
 
         except Exception as e:
+            document.status = "Error"
+            document.gpt_response = json.dumps({"status": "Error", "message": str(e)})
+            document.save()
             return {
                 'status': 'Error',
                 'message': str(e)
