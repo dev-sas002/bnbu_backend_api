@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url
+import ssl
 
 load_dotenv()
 
@@ -228,3 +229,16 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.getenv('CELERY_TIMEZONE', 'UTC')
 
+
+
+
+
+CELERY_BROKER_USE_SSL = {
+    'ssl_cert_reqs': ssl.CERT_NONE
+}
+
+# If using Redis as the result backend
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_RESULT_BACKEND_USE_SSL = {
+    'ssl_cert_reqs': ssl.CERT_NONE
+}

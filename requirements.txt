@@ -61,3 +61,5 @@ vine==5.1.0
 wcwidth==0.2.13
 whitenoise==6.8.2
 yarl==1.17.1
+dj-database-url
+
