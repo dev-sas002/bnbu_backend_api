@@ -7,7 +7,6 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
 import tiktoken
-from .tasks import analyze_chunk, process_analysis_results
 from .models import Lease, Document
 from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +21,9 @@ import PyPDF2
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 import json
+from .utils import split_document_into_chunks
+from .tasks import process_document_chunks
+
 
 
 class LeaseViewSet(viewsets.ModelViewSet):
@@ -210,8 +212,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 continue
 
             # Extract text from the PDF file and send it to OpenAI for document review
-            response = self._analyze_document_with_gpt(document)
-
+            response = self._analyze_document_with_gpt(document)            
             # Set the document status based on GPT's response
             document.status = response['status']
             document.gpt_response = response
@@ -224,86 +225,34 @@ class DocumentViewSet(viewsets.ModelViewSet):
             })
 
         return Response(results, status=status.HTTP_200_OK)
-    
+
     def _analyze_document_with_gpt(self, document):
         try:
-            if document.status in ["Approved", "Rejected", "Draft", "Error"]:
-                return {
-                    'status': document.status,
-                    'message': json.loads(document.gpt_response).get('message', 'No message available')
-                }
-                
-            # Extract text from the PDF file
-            with open(document.file.path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                num_pages = len(reader.pages)
-                chunk_size = 5  # Max pages per chunk for large documents
-                chunks = []
-
-                # Split the document into chunks of pages
-                for i in range(0, num_pages, chunk_size):
-                    chunk_text = ''
-                    for j in range(i, min(i + chunk_size, num_pages)):
-                        chunk_text += reader.pages[j].extract_text()
-                    chunks.append(chunk_text)
-
-            if not chunks:
-                raise ValueError("No text found in the document.")
-            # Define the system message for the document analysis, including lease details
-            system_message = f"""
-            This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
-            The primary goal is to assist users in identifying unusual clauses, potential legal risks, and ensuring transparency within the lease documents. 
-            It will always identify key financial details such as rent amounts and security deposits from uploaded leases. 
-            Additionally, the GPT will carefully review the lease for unfavorable terms to the tenant, such as disproportionate fees, restrictions, or unclear responsibilities, 
-            and will make suggestions for favorable terms and strategies for negotiation. 
-            For example, it will suggest negotiating points such as reduced late fees, prorated rent for partial occupancy months, or limits on certain restrictions like subletting. 
-            It will also ensure that checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions. 
-            The length of the lease, any related fees, and responsibilities of both the landlord and tenant are key areas of focus. 
+            # Print the file path
+            print("Document File Path:", document.file.path)
             
-            Please analyze the lease document and provide a clear assessment. 
-            Specifically, include a status for the lease: 
-            - "Approved" if the lease is favorable and there are no significant concerns.
-            - "Rejected" if there are major unfavorable clauses or legal risks.
-            - "Draft" if the lease is in an incomplete or negotiable state, and suggest any improvements or issues that need addressing.
+            # Attempt to split the document into chunks
+            chunks = split_document_into_chunks(document.file.path)
             
-            Please ensure the status is clearly mentioned in the response along with a summary of your findings.
-            """
+            # print("Chunk Results:", chunks)
 
-            # Trigger Celery tasks in parallel for each chunk
-            group_results = group(analyze_chunk.s(chunk, system_message) for chunk in chunks)()
-            # print("Group Results:", group_results)
+            # Dispatch Celery task for chunk processing
+            result = process_document_chunks.apply_async(args=[document.id, chunks])
 
-            # Wait for the group results to finish
-            result = group_results.get()  
+            # Wait for the final result (this will block until the result is available)
+            final_result = result.get()
 
-            # Now the result is a list of results from the individual tasks
-            # print("Individual Task Results:", result)
-
-            # Now you can pass these results into the analysis task
-            async_result = process_analysis_results.apply_async(
-                args=[document.id, result],
-                countdown=1  # Slight delay to ensure tasks start first
-            )
-
-            return {
-                'status': 'Pending',
-                'message': 'Analysis is in progress. Refresh the page for updates.'
-            }
-
-            # Wait for the final analysis result
-            # final_result = async_result.get()  # Wait for final result
+            # Print final analysis result
             # print("Final Analysis Result:", final_result)
 
-            # return final_result
+            return final_result
 
+        except FileNotFoundError as e:
+            # print(f"File not found: {str(e)}")
+            return {"status": "Error", "message": "File not found: {str(e)}"}
         except Exception as e:
-            document.status = "Error"
-            document.gpt_response = json.dumps({"status": "Error", "message": str(e)})
-            document.save()
-            return {
-                'status': 'Error',
-                'message': str(e)
-            }
+            print(f"An error occurred: {str(e)}")
+            return {"status": "Error", "message": "An unexpected error occurred: {str(e)}"}
 
 
     @action(detail=True, methods=['post'], url_path='chat')
@@ -390,18 +339,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
         gpt_response_data = document.gpt_response if document.gpt_response else {}
 
         # Ensure gpt_response_data is a dictionary before accessing its keys
-        if isinstance(gpt_response_data, dict):
-            gpt_response = {
-                'message': gpt_response_data.get('message'),
-                'status': gpt_response_data.get('status'),
-                'timestamp': gpt_response_data.get('created_time')
-            }
-        else:
-            gpt_response = {
-                'message': None,
-                'status': None,
-                'timestamp': None
-            }
+
+        gpt_response = {
+            'message': gpt_response_data.get('message'),
+            'status': gpt_response_data.get('status'),
+            'timestamp': gpt_response_data.get('created_time')
+        }
 
         chat_history = document.chat_history or []
 

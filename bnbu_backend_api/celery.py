@@ -12,16 +12,18 @@ app = Celery('bnbu_backend_api')  # Ensure this matches the project name
 
 
 # Configure Celery broker and result backend
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+USE_SSL = REDIS_URL.startswith('rediss://')
+
 app.conf.update(
-    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    broker_url=REDIS_URL,
+    result_backend=REDIS_URL,
     broker_use_ssl={
         'ssl_cert_reqs': ssl.CERT_NONE,
-    },
+    } if USE_SSL else None,
     redis_backend_use_ssl={
-        'ssl_cert_reqs': ssl.CERT_NONE ,
-    },
-
+        'ssl_cert_reqs': ssl.CERT_NONE,
+    } if USE_SSL else None,
     accept_content=['json'],  # Ensure compatibility
     task_serializer='json',
     result_serializer='json'
