@@ -227,21 +227,33 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(results, status=status.HTTP_200_OK)
 
     def _analyze_document_with_gpt(self, document):
-        chunks = split_document_into_chunks(document.file.path)
-                
-        # Dispatch Celery task for chunk processing
-        result = process_document_chunks.apply_async(args=[document.id, chunks])
+        try:
+            # Print the file path
+            print("Document File Path:", document.file.path)
+            
+            # Attempt to split the document into chunks
+            chunks = split_document_into_chunks(document.file.path)
+            
+            # print("Chunk Results:", chunks)
 
-        # Mark the document as "In Progress"
-        document.status = "In Progress"
-        document.save()
+            # Dispatch Celery task for chunk processing
+            result = process_document_chunks.apply_async(args=[document.id, chunks])
 
-        return {
-            'status': 'Pending',
-            "message": "Document analysis started.",
-            "task_id": result.id
-        }
-        
+            # Wait for the final result (this will block until the result is available)
+            final_result = result.get()
+
+            # Print final analysis result
+            # print("Final Analysis Result:", final_result)
+
+            return final_result
+
+        except FileNotFoundError as e:
+            # print(f"File not found: {str(e)}")
+            return {"status": "Error", "message": "File not found: {str(e)}"}
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
+            return {"status": "Error", "message": "An unexpected error occurred: {str(e)}"}
+
 
     @action(detail=True, methods=['post'], url_path='chat')
     def chat_with_gpt(self, request, pk=None):
