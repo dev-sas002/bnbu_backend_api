@@ -38,7 +38,7 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 # ALLOWED_HOSTS = ["staging-tool-bnb-488e79ceb030.herokuapp.com"]
 
 # ALLOWED_HOSTS setting
-if ENVIRONMENT == 'staging':
+if ENVIRONMENT in ['staging', 'production']:
     ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
@@ -109,11 +109,11 @@ WSGI_APPLICATION = 'bnbu_backend_api.wsgi.application'
 # }
 
 # Database configuration
-if ENVIRONMENT == 'staging':
+if ENVIRONMENT in ['staging', 'production']:
     # Use DATABASE_URL environment variable for staging
     DATABASES = {
         'default': dj_database_url.config(
-            default=os.getenv('STAGING_DATABASE_URL')
+            default=os.getenv('DATABASE_URL')
         )
     }
 else:
