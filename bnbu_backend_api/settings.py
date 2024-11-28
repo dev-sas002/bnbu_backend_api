@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "lease",
     "regulations",
     'rental.apps.RentalConfig',
+    'rental',
 ]
 AUTH_USER_MODEL = "accounts.CustomUser"
 
@@ -258,3 +259,4 @@ AIRDNA_URL = os.getenv("AIRDNA_URL")
 AIRDNA_API_KEY = os.getenv("AIRDNA_API_KEY")
 CLICKUP_CLIENT_ID = os.getenv("CLICKUP_CLIENT_ID")
 CLICKUP_CLIENT_SECRET = os.getenv("CLICKUP_CLIENT_SECRET")
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
