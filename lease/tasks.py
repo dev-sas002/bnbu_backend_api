@@ -10,6 +10,7 @@ import time
 from .models import Document
 from .integrations.openai_integration import call_gpt_api
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,33 +40,42 @@ def process_document_chunks(self, document_id, chunks):
             final_summary_response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "Please summarize the following document to fit within the token limit."},
-                    {"role": "user", "content": consolidated_response}
-                ]
+                    {
+                        "role": "system",
+                        "content": "Please summarize the following document to fit within the token limit.",
+                    },
+                    {"role": "user", "content": consolidated_response},
+                ],
             )
             # Only assign consolidated_response after summarization
-            consolidated_response = final_summary_response['choices'][0]['message']['content'].strip()
+            consolidated_response = final_summary_response["choices"][0]["message"][
+                "content"
+            ].strip()
 
         # If final_summary_response exists, extract created_time
-        if final_summary_response and 'created' in final_summary_response:
-            created_time = final_summary_response['created']
+        if final_summary_response and "created" in final_summary_response:
+            created_time = final_summary_response["created"]
             if isinstance(created_time, (int, float)):
-                created_time = datetime.fromtimestamp(created_time, tz=timezone.utc).isoformat()
+                created_time = datetime.fromtimestamp(
+                    created_time, tz=timezone.utc
+                ).isoformat()
 
         # Determine the status based on the analysis result
-        if 'approved' in consolidated_response.lower():
-            status = 'Approved'
-        elif 'rejected' in consolidated_response.lower():
-            status = 'Rejected'
+        if "approved" in consolidated_response.lower():
+            status = "Approved"
+        elif "rejected" in consolidated_response.lower():
+            status = "Rejected"
         else:
-            status = 'Draft'
+            status = "Draft"
 
         # Store the GPT response as a text string in JSON format
-        gpt_response_text = json.dumps({
-           "status": status,
-           "message": consolidated_response,
-           "created_time": created_time,
-        })
+        gpt_response_text = json.dumps(
+            {
+                "status": status,
+                "message": consolidated_response,
+                "created_time": created_time,
+            }
+        )
 
         # Store the response text in the document's gpt_response field
         document.status = status
@@ -74,15 +84,15 @@ def process_document_chunks(self, document_id, chunks):
         document.save()
 
         return {
-            'status': status,
-            'message': consolidated_response,
-            'created_time': created_time,
+            "status": status,
+            "message": consolidated_response,
+            "created_time": created_time,
         }
 
     except Exception as e:
         logger.error(f"Error processing document chunks: {str(e)}")
         return {
-            'status': 'Error',
-            'message': str(e),
-            'created_time': created_time,
+            "status": "Error",
+            "message": str(e),
+            "created_time": created_time,
         }
