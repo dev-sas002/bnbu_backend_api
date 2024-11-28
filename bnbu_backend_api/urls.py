@@ -10,4 +10,5 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/', include('lease.urls')),
     path('api/', include('regulations.urls')),
+    path('api/', include('rental.urls'))
 ]
