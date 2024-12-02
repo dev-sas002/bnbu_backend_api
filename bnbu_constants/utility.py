@@ -5,13 +5,13 @@ from bnbu_backend_api.settings import AIRDNA_URL, AIRDNA_API_KEY
 import requests
 
 def validate_file_type(file):
-    if not file.name.endswith(tuple(constants.VALID_FILE_EXTENSION)):
+    if not file.endswith(tuple(constants.VALID_FILE_EXTENSION)):
         return False
     return True
 
 
 def file_to_df(file):
-    if file.name.endswith(".csv"):
+    if file.endswith(".csv"):
         df = pd.read_csv(file)
     else:
         df = pd.read_excel(file)
