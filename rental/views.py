@@ -2,7 +2,8 @@ from rental.models import RentalProperty
 from rental.serializers import RentalPropertySerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from bnbu_constants.utility import (validate_file_type, file_to_df, validate_df)
+from bnbu_constants.utility import (validate_file_type, file_to_df, validate_df, normalize_df,
+                                    normalize_column, clean_price, process_rental_properties)
 from rest_framework.response import Response
 import bnbu_constants.constants as constants
 
@@ -15,7 +16,9 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
     def upload_rental_properties(self, request):
 
         # TO DO -> get the file from the request body
-        file = request.FILES.get("file")
+        # file = request.FILES.get("file")
+        file = 'rental/data.xlsx'
+
         if not file:
             return Response({"success": False,
                             "message": "File does not found"},
@@ -33,7 +36,14 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         missing_cols = validate_df(df)
-        if not missing_cols:
+        if missing_cols:
             return Response({"success": False,
                             "message": f"File must contain {constants.REQUIRED_COLS}. You must include {missing_cols}"},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        normalize_column(df, "Ba")
+        normalize_column(df, "Br")
+        normalize_column(df, "Sq. ft.")
+        df["Price"] = df["Price"].apply(clean_price)
+        df = normalize_df(df)
+        process_rental_properties(df)

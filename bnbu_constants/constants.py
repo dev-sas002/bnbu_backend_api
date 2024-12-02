@@ -15,3 +15,5 @@ RENTAL_PROPERY_STATUS_CHOICES = [
 VALID_FILE_EXTENSION = [".xls", ".xlsx", ".csv"]
 REQUIRED_COLS = ["Location", "Price", "Sq. ft.", "Ba", "Br", "Link"]
 IMP_COLS = ['Ba', 'Br', 'Price', 'Link']
+
+CURRENCY_USD = "usd"
