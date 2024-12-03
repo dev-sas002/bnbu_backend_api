@@ -1,3 +1,4 @@
+# /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/rental/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rental.views import RentalPropertyViewSet

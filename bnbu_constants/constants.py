@@ -1,4 +1,4 @@
-
+# /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/bnbu_constants/constants.py
 PENDING = "Pending"
 APPROVED = "Approved"
 REJECTED = "Rejected"

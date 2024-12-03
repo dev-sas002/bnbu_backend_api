@@ -74,7 +74,7 @@ INSTALLED_APPS = [
     "accounts",
     "lease",
     "regulations",
-    'rental',
+    'rental.apps.RentalConfig',
 ]
 AUTH_USER_MODEL = "accounts.CustomUser"
 
