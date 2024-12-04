@@ -8,12 +8,19 @@ from bnbu_constants.utility import (calculate_monthly_profit, validate_file_type
 from rest_framework.response import Response
 import bnbu_constants.constants as constants
 from django.db.models import Max
-import datetime
+from datetime import datetime, timedelta
+from django.db.models import Q
+from rest_framework.pagination import PageNumberPagination
 
+class RentalPropertyPagination(PageNumberPagination):
+    page_size = 10  # Default number of items per page
+    page_size_query_param = 'page_size'  # Allow client to specify page size
+    # max_page_size = 100  # Maximum allowed page size
 
 class RentalPropertyViewSet(viewsets.ModelViewSet):
     queryset = RentalProperty.objects.all().order_by('-created_at')
     serializer_class = RentalPropertySerializer
+    pagination_class = RentalPropertyPagination
 
     @action(detail=False, methods=['post'], url_path='upload-properties')
     def upload_rental_properties(self, request):
@@ -21,7 +28,7 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         # Step 1: Get the file from the request body
         # file = 'rental/data.xlsx'
         file = request.FILES.get("file")
-        print("Received file:", file)
+        # print("Received file:", file)
 
         if not file:
             print("No file found in the request.")
@@ -29,7 +36,7 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                              "message": "File does not found"},
                              status=status.HTTP_400_BAD_REQUEST)
 
-        print(f"File received: {file.name}, File size: {file.size} bytes")
+        # print(f"File received: {file.name}, File size: {file.size} bytes")
 
         # Step 2: Validate file type
         if not validate_file_type(file):
@@ -38,7 +45,7 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                              "message": f"Invalid file extension : only {constants.VALID_FILE_EXTENSION} are allowed"},
                              status=status.HTTP_400_BAD_REQUEST)
 
-        print("File type validated successfully.")
+        # print("File type validated successfully.")
 
         # Step 3: Convert file to DataFrame
         df = file_to_df(file)
@@ -48,7 +55,7 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                              "message": "File does not contain any data"},
                              status=status.HTTP_400_BAD_REQUEST)
 
-        print(f"DataFrame created successfully with {len(df)} rows.")
+        # print(f"DataFrame created successfully with {len(df)} rows.")
 
         # Step 4: Validate DataFrame columns
         missing_cols = validate_df(df)
@@ -58,18 +65,18 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                              "message": f"File must contain {constants.REQUIRED_COLS}. You must include {missing_cols}"},
                              status=status.HTTP_400_BAD_REQUEST)
 
-        print("All required columns are present in the DataFrame.")
+        # print("All required columns are present in the DataFrame.")
 
         # Step 5: Normalize the columns
-        print("Normalizing columns: 'Ba', 'Br', and 'Sq. ft.'")
+        # print("Normalizing columns: 'Ba', 'Br', and 'Sq. ft.'")
         normalize_column(df, "Ba")
         normalize_column(df, "Br")
         normalize_column(df, "Sq. ft.")
 
         # Step 6: Clean and process 'Price' column
-        print("Cleaning 'Price' column...")
+        # print("Cleaning 'Price' column...")
         df["Price"] = df["Price"].apply(clean_price)
-        print("Price column cleaned.")
+        # print("Price column cleaned.")
 
         # Step 7: Get the latest batch ID and calculate the new batch ID
         latest_batch = RentalProperty.objects.aggregate(Max('batch_id'))
@@ -77,14 +84,14 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         new_batch_id = latest_batch_id + 1
 
         # Step 8: Normalize the DataFrame
-        print("Normalizing DataFrame...")
+        # print("Normalizing DataFrame...")
         df = normalize_df(df)
-        print("DataFrame normalized.")
+        # print("DataFrame normalized.")
 
         # Step 9: Process rental properties (the main business logic)
-        print("Processing rental properties...")
+        # print("Processing rental properties...")
         processed_df = process_rental_properties(df, new_batch_id)
-        print("Rental properties processed successfully.")
+        # print("Rental properties processed successfully.")
 
         # Step 10: Save properties with the new batch ID
         for _, row in processed_df.iterrows():
@@ -109,10 +116,68 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
             rental_property.yearly_rent_cost_util = data[2]
             rental_property.save() 
 
-        print(f"Batch {new_batch_id} processed successfully.")
+        # print(f"Batch {new_batch_id} processed successfully.")
 
         return Response({"success": True,
                          "message": f"Successfully processed batch {new_batch_id}",
                          "data": processed_df.to_dict(orient='records')},
                          status=status.HTTP_201_CREATED)
-        
+    
+    @action(detail=False, methods=['post'], url_path='filtered-list')
+    def filtered_list(self, request):
+        filters = request.data
+        min_profit = filters.get("min_profit")
+        max_profit = filters.get("max_profit")
+        status = filters.get("status")
+        batch_id = filters.get("batch_id")
+        start_date = filters.get("start_date")
+        end_date = filters.get("end_date")
+
+        rental_properties = RentalProperty.objects.all()  # Initialize the queryset
+        # print( '======')
+        # print(rental_properties, '======')
+        # Build the query
+        query = Q()
+
+        # Apply filters only if they are provided
+        if min_profit is not None:
+            query &= Q(monthly_estimated_profit__gte=min_profit)
+        if max_profit is not None:
+            query &= Q(monthly_estimated_profit__lte=max_profit)
+        if status is not None:
+            query &= Q(property_status=status)
+        if batch_id is not None:
+            query &= Q(batch_id=batch_id)
+
+        # Handle start_date
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%B %d, %Y').date()
+                query &= Q(created_at__gte=start_date)
+            except ValueError:
+                return Response({'detail': 'Invalid start date format. Use "Month day, year" (e.g., December 3, 2024).'}, 
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        # Handle end_date
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%B %d, %Y').date()
+                end_date = end_date + timedelta(days=1)  # Make the end_date exclusive
+                query &= Q(created_at__lte=end_date)
+            except ValueError:
+                return Response({'detail': 'Invalid end date format. Use "Month day, year" (e.g., December 3, 2024).'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            end_date = datetime.now().date()
+
+        # print('query', query)
+        # If no filters are applied, the query will still be an empty Q() object, which will return all results
+        rental_properties = rental_properties.filter(query).order_by('-created_at')
+        # print('filtered data', rental_properties)
+        # Paginate the results
+        paginator = RentalPropertyPagination()
+        paginated_properties = paginator.paginate_queryset(rental_properties, request)
+
+        # Serialize the results
+        serializer = self.get_serializer(paginated_properties, many=True)
+        return paginator.get_paginated_response(serializer.data)
