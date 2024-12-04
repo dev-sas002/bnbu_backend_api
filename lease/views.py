@@ -7,14 +7,9 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
 import tiktoken
+from .tasks import analyze_chunk
 from .models import Lease, Document
-from .serializers import (
-    GPTChatSerializer,
-    LeaseSerializer,
-    LeaseUploadSerializer,
-    RevisedLeaseUploadSerializer,
-    DocumentSerializer,
-)
+from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsClientOrAdmin  # Import the custom permission class
 from django.utils import timezone
@@ -27,8 +22,6 @@ import PyPDF2
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 import json
-from .utils import split_document_into_chunks
-from .tasks import process_document_chunks
 
 
 class LeaseViewSet(viewsets.ModelViewSet):
@@ -59,9 +52,7 @@ class LeaseViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        lease = (
-            serializer.save()
-        )  # This will now have access to self.context['request']
+        lease = serializer.save()  # This will now have access to self.context['request']
 
         # Serialize the lease with the documents included
         lease_serializer = LeaseSerializer(lease)
@@ -269,28 +260,118 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def _analyze_document_with_gpt(self, document):
         try:
-            # Print the file path
-            print("Document File Path:", document.file.path)
+            # Extract text from the PDF file
+            with open(document.file.path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                num_pages = len(reader.pages)
+                chunk_size = 5  # Max pages per chunk for large documents
+                chunks = []
 
-            # Attempt to split the document into chunks
-            chunks = split_document_into_chunks(document.file.path)
+                # Split the document into chunks of pages
+                for i in range(0, num_pages, chunk_size):
+                    chunk_text = ''
+                    for j in range(i, min(i + chunk_size, num_pages)):
+                        chunk_text += reader.pages[j].extract_text()
+                    chunks.append(chunk_text)
 
-            # print("Chunk Results:", chunks)
+            if not chunks:
+                raise ValueError("No text found in the document.")
 
-            # Dispatch Celery task for chunk processing
-            result = process_document_chunks.apply_async(args=[document.id, chunks])
+            # Initialize OpenAI API
+            openai.api_key = settings.OPENAI_API_KEY
+            encoding = tiktoken.get_encoding("cl100k_base")
+            # time_to_wait = 0
 
-            # Wait for the final result (this will block until the result is available)
-            final_result = result.get()
+            # Define the system message for the document analysis, including lease details
+            system_message = f"""
+            This GPT acts as a short-term rental contract expert designed to help users, especially students, review rental leases. 
+            The primary goal is to assist users in identifying unusual clauses, potential legal risks, and ensuring transparency within the lease documents. 
+            It will always identify key financial details such as rent amounts and security deposits from uploaded leases. 
+            Additionally, the GPT will carefully review the lease for unfavorable terms to the tenant, such as disproportionate fees, restrictions, or unclear responsibilities, 
+            and will make suggestions for favorable terms and strategies for negotiation. 
+            For example, it will suggest negotiating points such as reduced late fees, prorated rent for partial occupancy months, or limits on certain restrictions like subletting. 
+            It will also ensure that checkbox provisions are correctly applied, particularly regarding assignment, subleasing, and permissions. 
+            The length of the lease, any related fees, and responsibilities of both the landlord and tenant are key areas of focus. 
+            
+            Please analyze the lease document and provide a clear assessment. 
+            Specifically, include a status for the lease: 
+            - "Approved" if the lease is favorable and there are no significant concerns.
+            - "Rejected" if there are major unfavorable clauses or legal risks.
+            - "Draft" if the lease is in an incomplete or negotiable state, and suggest any improvements or issues that need addressing.
+            
+            Please ensure the status is clearly mentioned in the response along with a summary of your findings.
+            """
 
-            # Print final analysis result
-            # print("Final Analysis Result:", final_result)
+            # time_to_wait = 20  # Throttle to avoid rate limits
 
-            return final_result
+            # Trigger Celery tasks in parallel for each chunk
+            group_results = group(analyze_chunk.s(chunk, system_message) for chunk in chunks)()
+            # Wait for results and apply throttling
+            # if time_to_wait > 0:
+            #     time.sleep(time_to_wait)
+            chunk_summaries = group_results.get()  # Wait for results
 
-        except FileNotFoundError as e:
-            # print(f"File not found: {str(e)}")
-            return {"status": "Error", "message": "File not found: {str(e)}"}
+            # If chunk_summaries contains dictionaries, extract the string message part
+            chunk_summaries = [result.get('message', '') if isinstance(result, dict) else str(result) for result in chunk_summaries]
+
+            # Combine all chunk summaries
+            combined_summary = " ".join(chunk_summaries)
+            combined_tokens = len(encoding.encode(combined_summary))
+
+            # If the combined summary is still too long, summarize it
+            if combined_tokens > 4096:
+                final_summary_response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "Please summarize the following document to fit within the token limit."},
+                        {"role": "user", "content": combined_summary}
+                    ]
+                )
+                combined_summary = final_summary_response['choices'][0]['message']['content']
+
+            # Final analysis on the combined summary
+            final_analysis_response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": combined_summary}
+                ]
+            )
+            
+            analysis_result = final_analysis_response['choices'][0]['message']['content'].strip()
+            created_time = final_analysis_response.get('created')
+
+            # Ensure created_time is a string in ISO 8601 format
+            if isinstance(created_time, (int, float)):
+                created_time = datetime.fromtimestamp(created_time, tz=timezone.utc).isoformat()
+
+            # Determine the status based on the analysis result
+            if 'approved' in analysis_result.lower():
+                status = 'Approved'
+            elif 'rejected' in analysis_result.lower():
+                status = 'Rejected'
+            else:
+                status = 'Draft'
+            
+            # Store the GPT response as a text string in JSON format
+            gpt_response_text = json.dumps({
+                "status": status,
+                "message": analysis_result,
+                "created_time": created_time
+            })
+
+            # Store the response text in the document's gpt_response field
+            document.status = status
+            document.gpt_response = gpt_response_text
+            document.gpt_created_time = created_time
+            document.save()
+
+            return {
+                'status': status,
+                'message': analysis_result,
+                'created_time': created_time,
+            }
+
         except Exception as e:
             print(f"An error occurred: {str(e)}")
             return {
@@ -386,12 +467,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
         gpt_response_data = document.gpt_response if document.gpt_response else {}
 
         # Ensure gpt_response_data is a dictionary before accessing its keys
-
-        gpt_response = {
-            "message": gpt_response_data.get("message"),
-            "status": gpt_response_data.get("status"),
-            "timestamp": gpt_response_data.get("created_time"),
-        }
+        if isinstance(gpt_response_data, dict):
+            gpt_response = {
+                "message": gpt_response_data.get("message"),
+                "status": gpt_response_data.get("status"),
+                "timestamp": gpt_response_data.get("created_time")
+            }
+        else:
+            gpt_response = {
+                "message": None,
+                "status": None,
+                "timestamp": None
+            }
 
         chat_history = document.chat_history or []
 
