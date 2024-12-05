@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 import os
 import json
 from dotenv import load_dotenv
@@ -218,3 +219,17 @@ CACHES = {
         "OPTIONS": {"ssl_cert_reqs": None},
     }
 }
+
+
+# Step 1: Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for more detailed logs
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("lease_analysis.log"),  # Logs saved to a file
+        logging.StreamHandler()  # Logs also shown in the console
+    ]
+)
+
+# Step 2: Create a logger instance
+logger = logging.getLogger(__name__)
