@@ -169,7 +169,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # Check if the document has a file
         if document.file:
-            file_path = document.file.path
+            file_path = document.file.url
+
+            print(f"Document file path: {file_path}")
 
             # Define a generator function to stream the file
             def file_iterator(file_name, chunk_size=512):
