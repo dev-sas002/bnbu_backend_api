@@ -76,14 +76,18 @@ def analyze_document_with_gpt(document):
     logger.info(f"Analyzing document ID: {document.id}")
     try:
         # Construct the file path using BASE_DIR
-        file_path = Path(settings.BASE_DIR, 'documents', document.file.path)
+        file_path = Path(settings.BASE_DIR, document.file.path)
 
-        print(f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}, {settings.BASE_DIR}")
+        print(
+            f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}, {settings.BASE_DIR}"
+        )
 
         if not os.path.exists(file_path):
-            logger.error(f"File does not exist on the server. Document file path is: {file_path}, {settings.BASE_DIR}")
+            logger.error(
+                f"File does not exist on the server. Document file path is: {file_path}, {settings.BASE_DIR}"
+            )
             raise FileNotFoundError(f"File not found: {file_path}")
-        
+
         with open(file_path, "rb") as file:
             reader = PyPDF2.PdfReader(file)
             num_pages = len(reader.pages)
