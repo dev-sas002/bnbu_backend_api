@@ -75,7 +75,7 @@ def analyze_document_with_gpt(document):
     logger.info(f"Analyzing document ID: {document.id}")
     try:
         # Construct the file path using BASE_DIR
-        file_path = os.path.join(settings.BASE_DIR, document.file.path)
+        file_path = os.path.join(settings.BASE_DIR, document.file)
         print(f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}")
 
         if not os.path.exists(file_path):
