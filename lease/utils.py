@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 import re
 import time
 import PyPDF2
@@ -75,7 +76,8 @@ def analyze_document_with_gpt(document):
     logger.info(f"Analyzing document ID: {document.id}")
     try:
         # Construct the file path using BASE_DIR
-        file_path = os.path.join(settings.BASE_DIR + '/documents', document.file.path)
+        file_path = Path(settings.BASE_DIR, 'documents', document.file.path)
+
         print(f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}, {settings.BASE_DIR}")
 
         if not os.path.exists(file_path):
