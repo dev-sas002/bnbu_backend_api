@@ -25,6 +25,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATIC_URL = "/static/"
 
+
+MEDIA_ROOT = os.path.join(BASE_DIR, "documents")
+MEDIA_URL = "/documents/"
+
 # Determine the environment: development, staging
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
@@ -227,8 +231,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler("lease_analysis.log"),  # Logs saved to a file
-        logging.StreamHandler()  # Logs also shown in the console
-    ]
+        logging.StreamHandler(),  # Logs also shown in the console
+    ],
 )
 
 # Step 2: Create a logger instance
