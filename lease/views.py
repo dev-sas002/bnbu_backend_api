@@ -1,4 +1,5 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/views.py
+import os
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -169,9 +170,15 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         # Check if the document has a file
         if document.file:
-            file_path = document.file.url
+            # file_path = document.file.path
 
+            file_path = os.path.join(settings.BASE_DIR, document.file.path)
             print(f"Document file path: {file_path}")
+            if not os.path.exists(file_path):
+                return Response(
+                    {"detail": "Document file not found on the server."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
             # Define a generator function to stream the file
             def file_iterator(file_name, chunk_size=512):
