@@ -73,7 +73,7 @@ def analyze_document_with_gpt(document):
     """
     logger.info(f"Analyzing document ID: {document.id}")
     try:
-        with open(document.file.url, "rb") as file:
+        with open(document.file.path, "rb") as file:
             reader = PyPDF2.PdfReader(file)
             num_pages = len(reader.pages)
             logger.info(f"Document has {num_pages} pages.")
