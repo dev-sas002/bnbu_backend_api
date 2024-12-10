@@ -27,8 +27,8 @@ STATIC_URL = "/static/"
 
 
 # Media files
-MEDIA_ROOT = os.path.join(BASE_DIR, "documents")
-MEDIA_URL = "/documents/"
+# MEDIA_ROOT = os.path.join(BASE_DIR, "documents")
+# MEDIA_URL = "/documents/"
 
 # Determine the environment: development, staging
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")

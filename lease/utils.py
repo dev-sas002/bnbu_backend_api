@@ -3,6 +3,7 @@ from __future__ import absolute_import, unicode_literals
 import json
 import logging
 from datetime import datetime, timezone
+import os
 import re
 import time
 import PyPDF2
@@ -73,7 +74,15 @@ def analyze_document_with_gpt(document):
     """
     logger.info(f"Analyzing document ID: {document.id}")
     try:
-        with open(document.file.path, "rb") as file:
+        # Construct the file path using BASE_DIR
+        file_path = os.path.join(settings.BASE_DIR, document.file.path)
+        print(f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}")
+
+        if not os.path.exists(file_path):
+            logger.error("File does not exist on the server.")
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        with open(file_path, "rb") as file:
             reader = PyPDF2.PdfReader(file)
             num_pages = len(reader.pages)
             logger.info(f"Document has {num_pages} pages.")
