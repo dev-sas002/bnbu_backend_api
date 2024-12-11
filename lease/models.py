@@ -42,7 +42,8 @@ class Document(models.Model):
         ("Pending", "Pending"),
     ]
     lease = models.ForeignKey(Lease, related_name="documents", on_delete=models.CASCADE)
-    file = models.FileField(upload_to="documents/")
+    file = models.FileField(upload_to="documents/", blank=True, null=True)
+    file_url = models.URLField(blank=True, null=True)
     name = models.CharField(max_length=255)
     version = models.PositiveIntegerField(default=1)
     uploaded_at = models.DateTimeField(auto_now_add=True)

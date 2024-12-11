@@ -13,10 +13,16 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import logging
 import os
 import json
+import cloudinary
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url
+import environ
+
+# Initialize environment variables
+env = environ.Env()
+environ.Env.read_env()
 
 load_dotenv()
 
@@ -238,3 +244,11 @@ logging.basicConfig(
 
 # Step 2: Create a logger instance
 logger = logging.getLogger(__name__)
+
+
+# Cloudinary configuration from .env file
+cloudinary.config(
+    cloud_name=env('CLOUDINARY_CLOUD_NAME'),
+    api_key=env('CLOUDINARY_API_KEY'),
+    api_secret=env('CLOUDINARY_API_SECRET'),
+)

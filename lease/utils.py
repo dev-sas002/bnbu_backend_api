@@ -1,5 +1,6 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/utils.py
 from __future__ import absolute_import, unicode_literals
+import io
 import json
 import logging
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ import time
 import PyPDF2
 from django.conf import settings
 import openai
+import requests
 import tiktoken
 
 logger = logging.getLogger(__name__)
@@ -69,34 +71,35 @@ def analyze_chunk(chunk, system_message):
 
 def analyze_document_with_gpt(document):
     """
-    Analyzes a PDF document by splitting it into chunks, processing each chunk with GPT-4,
-    and combining the results for final analysis.
+    Analyzes a PDF document by downloading it from Cloudinary, splitting it into chunks,
+    processing each chunk with GPT-4, and combining the results for final analysis.
     """
     logger.info(f"Analyzing document ID: {document.id}")
     try:
-        # Construct the file path using BASE_DIR
-        file_path = os.path.join(settings.BASE_DIR , document.file.path)
-        print(f"I am in analyze_document_with_gpt function and the Document file path is: {file_path}, {settings.BASE_DIR}")
+        # Ensure the document has a valid file URL
+        if not document.file_url:
+            logger.error("Document file URL is not set.")
+            raise ValueError("Document file URL is not set.")
 
-        if not os.path.exists(file_path):
-            logger.error(
-                f"File does not exist on the server. Document file path is: {file_path}, {settings.BASE_DIR}"
+        # Fetch the document from Cloudinary
+        response = requests.get(document.file_url, stream=True)
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch document from Cloudinary. Status code: {response.status_code}")
+            raise ValueError("Failed to fetch document from Cloudinary.")
+
+        file_content = io.BytesIO(response.content)
+        reader = PyPDF2.PdfReader(file_content)
+        num_pages = len(reader.pages)
+        logger.info(f"Document has {num_pages} pages.")
+        chunk_size = 5
+        chunks = [
+            "".join(
+                reader.pages[j].extract_text()
+                for j in range(i, min(i + chunk_size, num_pages))
             )
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        with open(file_path, "rb") as file:
-            reader = PyPDF2.PdfReader(file)
-            num_pages = len(reader.pages)
-            logger.info(f"Document has {num_pages} pages.")
-            chunk_size = 5
-            chunks = [
-                "".join(
-                    reader.pages[j].extract_text()
-                    for j in range(i, min(i + chunk_size, num_pages))
-                )
-                for i in range(0, num_pages, chunk_size)
-            ]
-            logger.info(f"Document split into {len(chunks)} chunks.")
+            for i in range(0, num_pages, chunk_size)
+        ]
+        logger.info(f"Document split into {len(chunks)} chunks.")
 
         if not chunks:
             logger.error("No text found in the document.")

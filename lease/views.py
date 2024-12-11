@@ -1,5 +1,6 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/views.py
 import os
+import requests
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -42,7 +43,7 @@ class LeaseViewSet(viewsets.ModelViewSet):
         # Use LeaseUploadSerializer to validate and create the Lease
         serializer = LeaseUploadSerializer(
             data=data, context={"request": request}
-        )  # Pass request in context
+        )
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -160,41 +161,34 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="preview/(?P<document_id>\d+)")
     def preview_document(self, request, document_id=None):
-        # Fetch the specific document by document ID
+        print(f"Attempting to preview document with ID: {document_id}")
+        
         try:
             document = Document.objects.get(id=document_id)
+            print(f"Document found: {document}")
         except Document.DoesNotExist:
+            print("Document not found in the database.")
             return Response(
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Check if the document has a file
-        if document.file:
-            # file_path = document.file.path
+        # Check if the document has a file_url
+        if document.file_url:
+            print(f"Returning document file URL: {document.file_url}")
 
-            file_path = os.path.join(settings.BASE_DIR, document.file.path)
-            print(f"Document file path: {file_path}")
-            if not os.path.exists(file_path):
-                return Response(
-                    {"detail": "Document file not found on the server."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
-            # Define a generator function to stream the file
-            def file_iterator(file_name, chunk_size=512):
-                with open(file_name, "rb") as f:
-                    while chunk := f.read(chunk_size):
-                        yield chunk
-
-            response = StreamingHttpResponse(
-                file_iterator(file_path), content_type="application/pdf"
+            # Check if the document has a file_url
+        if document.file_url:
+            print(f"Returning document file URL: {document.file_url}")
+            return Response(
+                {"file_url": document.file_url}, 
+                status=status.HTTP_200_OK
             )
-            response["Content-Disposition"] = f'inline; filename="{document.file.name}"'
-            return response
 
         return Response(
             {"detail": "Document file not found."}, status=status.HTTP_404_NOT_FOUND
         )
+
+
 
     @action(detail=False, methods=["get"], url_path="lease/(?P<lease_id>\d+)/documents")
     def list_document_names(self, request, lease_id=None):
@@ -212,9 +206,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
             {
                 "id": doc.id,
                 "lease_id": doc.lease_id,
-                "name": f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
+                "name": f"{doc.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
                 "uploaded_at": doc.uploaded_at,
                 "status": doc.status,
+                "file_url" : doc.file_url,
             }
             for doc in documents
         ]
@@ -238,7 +233,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             document = get_object_or_404(Document, pk=document_id)
 
             # Check if the document has a file
-            if not document.file:
+            if not document.file_url:
                 results.append(
                     {"document_id": document_id, "detail": "Document file not found."}
                 )
