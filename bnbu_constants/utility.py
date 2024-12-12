@@ -81,61 +81,13 @@ def calculate_monthly_profit(annual_revenue, monthly_rent, no_of_bedroom):
 def determine_property_status(no_of_bedrooms, monthly_estimated_profit):
     """Determine the property status based on number of bedrooms and monthly profit."""
     if monthly_estimated_profit is None:
-        return "error"
+        return "Error"
 
     if no_of_bedrooms == 1 and monthly_estimated_profit >= 1000:
-        return "approved"
+        return "Approved"
     elif no_of_bedrooms == 2 and monthly_estimated_profit >= 1500:
-        return "approved"
+        return "Approved"
     elif no_of_bedrooms >= 3 and monthly_estimated_profit >= 2000:
-        return "approved"
+        return "Approved"
     else:
-        return "rejected"
-
-
-def process_rental_properties(cleaned_df, batch_id):
-
-    batch_size = 25
-    print(f"Processing DataFrame with {len(cleaned_df)} rows")
-
-    for i in range(0, len(cleaned_df), batch_size):
-        bulk_queries = []
-        data_chunk = cleaned_df.iloc[i:i + batch_size]
-        print(f"Processing batch {i} to {i + batch_size}")
-        for row in data_chunk.itertuples(index=False):
-            query = {
-                "address": row.Location,
-                "bedrooms": row.Br,
-                "bathrooms": row.Ba,
-                "accommodates": row.Br * 2 if row.Br else None,
-                "currency": constants.CURRENCY_USD,
-            }
-            bulk_queries.append(query)
-        print("Sending payload to AirDNA API:", bulk_queries)
-        response =  process_airdna_api(bulk_queries)
-        print("AirDNA API Response:", response)
-        revelant_information = [
-                            {
-                                'ADR': entry['stats']['future']['summary'].get('adr'),
-                                'Occupancy': entry['stats']['future']['summary'].get('occupancy'),
-                                'Revenue': entry['stats']['future']['summary'].get('revenue'),
-                                'Location': entry['details']['address'],
-                            }
-                            for entry in response
-                        ]
-        response_dataframe = pd.DataFrame(revelant_information)
-        merged_df = pd.merge(cleaned_df, response_dataframe, on='Location', how='left')
-        # Calculate utilities, monthly profit, and property status
-        merged_df['utilities'] = merged_df['Br'].apply(calculate_utilities)
-        merged_df['monthly_estimated_profit'] = merged_df.apply(
-            lambda row: calculate_monthly_profit(row.Revenue, row.Price, row.Br)[-1],
-            axis=1
-        )
-
-        merged_df['property_status'] = merged_df.apply(
-            lambda row: determine_property_status(row.Br, row.monthly_estimated_profit),
-            axis=1
-        )
-
-    return merged_df
-
+        return "Rejected"
