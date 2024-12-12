@@ -28,7 +28,7 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         # Step 1: Get the file from the request body
         # file = 'rental/data.xlsx'
         file = request.FILES.get("file")
-        # print("Received file:", file)
+        print("Received file:", file)
 
         if not file:
             print("No file found in the request.")
@@ -109,8 +109,8 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                 monthly_estimated_profit=row['monthly_estimated_profit'],
                 batch_id=new_batch_id,
                 property_status=row['property_status'],
-                created_at= datetime.datetime.now(),
-                updated_at=datetime.datetime.now(),
+                created_at= datetime.now(),
+                updated_at=datetime.now(),
             )
             data = calculate_monthly_profit(rental_property.yearly_projected_revenue, rental_property.rent, rental_property.no_of_bedrooms)
             rental_property.yearly_rent_cost_util = data[2]
