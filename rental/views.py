@@ -11,6 +11,8 @@ from django.db.models import Max
 from datetime import datetime, timedelta
 from django.db.models import Q
 from rest_framework.pagination import PageNumberPagination
+from .permissions import IsClientOrAdmin
+from rest_framework.permissions import IsAuthenticated
 
 class RentalPropertyPagination(PageNumberPagination):
     page_size = 10  # Default number of items per page
@@ -19,6 +21,7 @@ class RentalPropertyPagination(PageNumberPagination):
 
 class RentalPropertyViewSet(viewsets.ModelViewSet):
     queryset = RentalProperty.objects.all().order_by('-created_at')
+    permission_classes = [IsAuthenticated, IsClientOrAdmin]
     serializer_class = RentalPropertySerializer
     pagination_class = RentalPropertyPagination
 
