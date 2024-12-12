@@ -59,6 +59,22 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         task = process_rental_properties_task.delay(df.to_json(orient='records'), new_batch_id)
 
         return Response({"success": True, "message": f"Batch {new_batch_id} processing started", "task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+    
+    @action(detail=False, methods=['get'], url_path='all-properties')
+    def all_properties(self, request):
+        # Fetch all rental properties
+        rental_properties = RentalProperty.objects.all().order_by('-created_at')
+        
+        # Paginate the results
+        paginator = RentalPropertyPagination()
+        paginated_properties = paginator.paginate_queryset(rental_properties, request)
+
+        # Serialize the results
+        serializer = self.get_serializer(paginated_properties, many=True)
+
+        # Return paginated response
+        return paginator.get_paginated_response(serializer.data)
+
 
     @action(detail=False, methods=['post'], url_path='filtered-list')
     def filtered_list(self, request):
