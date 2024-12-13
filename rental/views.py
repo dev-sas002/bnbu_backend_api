@@ -121,12 +121,17 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Invalid end date format. Use "Month day, year" (e.g., December 3, 2024).'},
                                 status=status.HTTP_400_BAD_REQUEST)
         else:
-            end_date = datetime.now().date()
+            # end_date = datetime.now().date()
+            end_date_str = datetime.now().strftime('%B %d, %Y')  # Convert current date to string
+            end_date = datetime.strptime(end_date_str, '%B %d, %Y').date()  # Parse string back to date
+            
+        # If any filters are provided, apply them; otherwise, return all records
+        if query != Q():  # Only apply filtering if there are valid filters
+            rental_properties = rental_properties.filter(query).order_by('-created_at')
+        else:
+            rental_properties = rental_properties.order_by('-created_at')  # No filters, return all
 
-        # print('query', query)
-        # If no filters are applied, the query will still be an empty Q() object, which will return all results
-        rental_properties = rental_properties.filter(query).order_by('-created_at')
-        # print('filtered data', rental_properties)
+
         # Paginate the results
         paginator = RentalPropertyPagination()
         paginated_properties = paginator.paginate_queryset(rental_properties, request)
