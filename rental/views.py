@@ -1,4 +1,5 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/rental/views.py
+from django.http import HttpResponse
 from rental.models import RentalProperty
 from rental.serializers import RentalPropertySerializer
 from rest_framework import viewsets, status
@@ -14,6 +15,7 @@ from rest_framework.pagination import PageNumberPagination
 from .permissions import IsClientOrAdmin
 from rest_framework.permissions import IsAuthenticated
 from rental.tasks import process_rental_properties_task
+import csv
 
 class RentalPropertyPagination(PageNumberPagination):
     page_size = 10  # Default number of items per page
@@ -139,3 +141,97 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         # Serialize the results
         serializer = self.get_serializer(paginated_properties, many=True)
         return paginator.get_paginated_response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='download-csv')
+    def download_csv(self, request):
+        filters = request.query_params
+        min_profit = filters.get("min_profit")
+        max_profit = filters.get("max_profit")
+        status = filters.get("status")
+        batch_id = filters.get("batch_id")
+        start_date = filters.get("start_date")
+        end_date = filters.get("end_date")
+
+        rental_properties = RentalProperty.objects.all()  # Initialize the queryset
+        query = Q()
+
+        # Apply filters only if they are provided
+        if min_profit is not None:
+            query &= Q(monthly_estimated_profit__gte=min_profit)
+        if max_profit is not None:
+            query &= Q(monthly_estimated_profit__lte=max_profit)
+        if status is not None:
+            query &= Q(property_status=status)
+        if batch_id is not None:
+            query &= Q(batch_id=batch_id)
+
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%B %d, %Y').date()
+                query &= Q(created_at__gte=start_date)
+            except ValueError:
+                return Response({'detail': 'Invalid start date format. Use "Month day, year" (e.g., December 3, 2024).'}, 
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%B %d, %Y').date()
+                end_date = end_date + timedelta(days=1)  # Make the end_date exclusive
+                query &= Q(created_at__lte=end_date)
+            except ValueError:
+                return Response({'detail': 'Invalid end date format. Use "Month day, year" (e.g., December 3, 2024).'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        # Apply filters if any
+        if query != Q():
+            rental_properties = rental_properties.filter(query).order_by('-created_at')
+        else:
+            rental_properties = rental_properties.order_by('-created_at')  # No filters, return all
+
+        # Prepare the HTTP response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="rental_properties.csv"'
+
+        # Create a CSV writer
+        writer = csv.writer(response)
+
+        # Write the header
+        writer.writerow([
+            "Date",
+            "Batch Id",
+            "Location",
+            "Rent",
+            "Bedrooms",
+            "Bathrooms",
+            "Square Feet",
+            "Link",
+            "Adr",
+            "Utilities",
+            "Estimated Profit",
+            "Estimated Earnings",
+            "Yearly Rent Cost",
+            "Occupancy Rate",
+            "Zillow Property Status"
+        ])
+
+        # Write data rows
+        for property in rental_properties:
+            writer.writerow([
+                property.created_at.strftime('%B %d, %Y') if property.created_at else "",
+                property.batch_id,
+                property.location,
+                property.rent,
+                property.no_of_bedrooms,
+                property.no_of_bathrooms,
+                property.square_feet,
+                property.property_zillow_link,
+                property.adr,
+                property.utilities,
+                property.monthly_estimated_profit,
+                property.yearly_projected_revenue,
+                property.yearly_rent_cost_util,
+                property.occupancy_rate,
+                property.property_status,
+            ])
+
+        return response
