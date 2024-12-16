@@ -1,5 +1,5 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/rental/views.py
-from django.http import HttpResponse
+from django.http import StreamingHttpResponse
 from rental.models import RentalProperty
 from rental.serializers import RentalPropertySerializer
 from rest_framework import viewsets, status
@@ -184,54 +184,68 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
 
         # Apply filters if any
         if query != Q():
-            rental_properties = rental_properties.filter(query).order_by('-created_at')
+            rental_properties = rental_properties.filter(query)
         else:
-            rental_properties = rental_properties.order_by('-created_at')  # No filters, return all
+            rental_properties = rental_properties # No filters, return all
 
-        # Prepare the HTTP response
-        response = HttpResponse(content_type='text/csv')
+        # Prepare the CSV response
+        response = StreamingHttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="rental_properties.csv"'
 
-        # Create a CSV writer
-        writer = csv.writer(response)
+        # Define a generator to stream the CSV data
+        def generate_csv():
+            # Yield the header
+            yield ",".join([
+                "Date",
+                "Batch Id",
+                "Location",
+                "Rent",
+                "Bedrooms",
+                "Bathrooms",
+                "Square Feet",
+                "Link",
+                "Adr",
+                "Utilities",
+                "Estimated Profit",
+                "Estimated Earnings",
+                "Yearly Rent Cost",
+                "Occupancy Rate",
+                "Zillow Property Status"
+            ]) + "\n"
+    
+            # Yield data rows one by one
+            for property in rental_properties:
+                # Escape the location field if necessary
+                location = property.location
+                # Enclose in quotes if there are commas or special characters (like '*', '#', etc.)
+                if ',' in location or '"' in location or '*' in location or '#' in location:
+                    location = '"{}"'.format(location.replace('"', '""'))
 
-        # Write the header
-        writer.writerow([
-            "Date",
-            "Batch Id",
-            "Location",
-            "Rent",
-            "Bedrooms",
-            "Bathrooms",
-            "Square Feet",
-            "Link",
-            "Adr",
-            "Utilities",
-            "Estimated Profit",
-            "Estimated Earnings",
-            "Yearly Rent Cost",
-            "Occupancy Rate",
-            "Zillow Property Status"
-        ])
+                # Handle the date field
+                date = property.created_at.strftime('%B %d, %Y') if property.created_at else ""
+                # Enclose in quotes if there are commas or special characters (like ',')
+                if ',' in date or '"' in date:
+                    date = '"{}"'.format(date.replace('"', '""'))
 
-        # Write data rows
-        for property in rental_properties:
-            writer.writerow([
-                property.created_at.strftime('%B %d, %Y') if property.created_at else "",
-                property.batch_id,
-                property.location,
-                property.rent,
-                property.no_of_bedrooms,
-                property.no_of_bathrooms,
-                property.square_feet,
-                property.property_zillow_link,
-                property.adr,
-                property.utilities,
-                property.monthly_estimated_profit,
-                property.yearly_projected_revenue,
-                property.yearly_rent_cost_util,
-                property.occupancy_rate,
-                property.property_status,
-            ])
+                yield ",".join([
+                    date,
+                    str(property.batch_id),
+                    location,
+                    str(property.rent),
+                    str(property.no_of_bedrooms),
+                    str(property.no_of_bathrooms),
+                    str(property.square_feet),
+                    property.property_zillow_link,
+                    str(property.adr),
+                    str(property.utilities),
+                    str(property.monthly_estimated_profit),
+                    str(property.yearly_projected_revenue),
+                    str(property.yearly_rent_cost_util),
+                    str(property.occupancy_rate),
+                    property.property_status,
+                ]) + "\n"
+
+        # Stream the CSV data
+        response.streaming_content = generate_csv()
 
         return response
