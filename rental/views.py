@@ -16,6 +16,7 @@ from .permissions import IsClientOrAdmin
 from rest_framework.permissions import IsAuthenticated
 from rental.tasks import process_rental_properties_task
 import csv
+from celery.result import AsyncResult
 
 class RentalPropertyPagination(PageNumberPagination):
     page_size = 10  # Default number of items per page
@@ -62,6 +63,21 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
 
         return Response({"success": True, "message": f"Batch {new_batch_id} processing started", "task_id": task.id}, status=status.HTTP_202_ACCEPTED)
     
+    @action(detail=False, methods=['get'], url_path='task-result')
+    def get_task_result(self, request):
+        task_id = request.query_params.get("task_id")
+        if not task_id:
+            return Response({"success": False, "message": "Task ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+        task_result = AsyncResult(task_id)
+        if task_result.state == "PENDING":
+            return Response({"success": False, "message": "Task is still pending"}, status=status.HTTP_202_ACCEPTED)
+        elif task_result.state == "FAILURE":
+            return Response({"success": False, "message": "Task failed", "error": str(task_result.result)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        elif task_result.state == "SUCCESS":
+            return Response({"success": True, "message": "Task completed", "result": task_result.result}, status=status.HTTP_200_OK)
+        else:
+            return Response({"success": True, "message": f"Task is {task_result.state}", "result": task_result.result}, status=status.HTTP_200_OK)
+        
     @action(detail=False, methods=['get'], url_path='all-properties')
     def all_properties(self, request):
         # Fetch all rental properties

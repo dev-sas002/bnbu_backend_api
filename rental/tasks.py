@@ -77,33 +77,53 @@ def process_rental_properties_task(cleaned_df_json, batch_id):
 
         # Save processed properties
         for _, row in merged_df.iterrows():
-            try:
-                rental_property = RentalProperty(
-                    location=row['Location'],
-                    rent=row['Price'],
-                    no_of_bedrooms=row['Br'],
-                    no_of_bathrooms=row['Ba'],
-                    square_feet=row['Sq. ft.'],
-                    property_zillow_link=row['Link'],
-                    adr=row['ADR'], 
-                    occupancy_rate=row['Occupancy'],
-                    utilities=row['utilities'],
-                    yearly_projected_revenue=row['Revenue'],
-                    monthly_estimated_profit=row['monthly_estimated_profit'],
-                    batch_id=batch_id,
-                    property_status=row['property_status'],
-                    created_at=datetime.now(),
-                    updated_at=datetime.now(),
-                )
-                rental_property.yearly_rent_cost_util = calculate_monthly_profit(
-                    rental_property.yearly_projected_revenue, rental_property.rent, rental_property.no_of_bedrooms
-                )[2]
-                rental_property.save()
-                logger.debug("Saved RentalProperty: %s", rental_property)
-            except Exception as e:
-                logger.error("Error saving RentalProperty for Location: %s. Error: %s", row['Location'], e, exc_info=True)
+          try:
+              # Validate and handle missing or NaN values
+              square_feet = row.get('Sq. ft.')
+              adr = row.get('ADR')
+              occupancy_rate = row.get('Occupancy')
+              revenue = row.get('Revenue')
 
-        results.append(merged_df)
+              # Handle NaN values and ensure valid data for saving
+              if pd.isna(square_feet):
+                  logger.warning("Skipping property at Location: %s due to missing 'square_feet'.", row['Location'])
+                  continue  # Skip this row
+
+              # Ensure all numeric fields are valid
+              adr = 0 if pd.isna(adr) else float(adr)
+              occupancy_rate = 0 if pd.isna(occupancy_rate) else float(occupancy_rate)
+              revenue = 0 if pd.isna(revenue) else float(revenue)
+
+              utilities = row.get('utilities') if pd.notna(row.get('utilities')) else None
+
+              # Save to RentalProperty model
+              rental_property = RentalProperty(
+                  location=row['Location'],
+                  rent=row['Price'] if not pd.isna(row['Price']) else 0,  # Default to 0 if missing
+                  no_of_bedrooms=row['Br'] if not pd.isna(row['Br']) else 0,
+                  no_of_bathrooms=row['Ba'] if not pd.isna(row['Ba']) else 0,
+                  square_feet=int(square_feet) if not pd.isna(square_feet) else 0,  # Ensure square_feet is valid
+                  property_zillow_link=row['Link'],
+                  adr=adr, 
+                  occupancy_rate=occupancy_rate,
+                  utilities=utilities,
+                  yearly_projected_revenue=revenue,
+                  monthly_estimated_profit=row['monthly_estimated_profit'] if not pd.isna(row['monthly_estimated_profit']) else 0,
+                  batch_id=batch_id,
+                  property_status=row['property_status'],
+                  created_at=datetime.now(),
+                  updated_at=datetime.now(),
+              )
+              rental_property.yearly_rent_cost_util = calculate_monthly_profit(
+                  rental_property.yearly_projected_revenue, rental_property.rent, rental_property.no_of_bedrooms
+              )[2]
+
+              rental_property.save()
+              logger.debug("Saved RentalProperty: %s", rental_property)
+          except Exception as e:
+              logger.error("Error saving RentalProperty for Location: %s. Error: %s", row['Location'], e, exc_info=True)
+
+          results.append(merged_df)
 
     try:
         result_json = pd.concat(results).to_json(orient='records')
