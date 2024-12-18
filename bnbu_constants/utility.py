@@ -25,7 +25,8 @@ def validate_df(df):
     return missing_cols
 
 def normalize_column(df, col_name):
-    df[col_name] = df[col_name].astype(str).str.extract('(\d+)').astype(float)
+    # df[col_name] = df[col_name].astype(str).str.extract('(\d+)').astype(float)
+    df[col_name] = df[col_name].astype(str).str.extract(r"(\d+)").astype(float)
 
 def normalize_df(df):
     df = df.dropna(subset=constants.IMP_COLS)

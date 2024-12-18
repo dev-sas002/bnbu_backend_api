@@ -159,7 +159,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["lease", "version"]
     search_fields = ["name"]
 
-    @action(detail=False, methods=["get"], url_path="preview/(?P<document_id>\d+)")
+    @action(detail=False, methods=["get"], url_path=r"preview/(?P<document_id>\d+)")
     def preview_document(self, request, document_id=None):
         print(f"Attempting to preview document with ID: {document_id}")
         
@@ -190,7 +190,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
 
 
-    @action(detail=False, methods=["get"], url_path="lease/(?P<lease_id>\d+)/documents")
+    @action(detail=False, methods=["get"], url_path=r"lease/(?P<lease_id>\d+)/documents")
     def list_document_names(self, request, lease_id=None):
         # Fetch documents related to the specified lease ID
         documents = Document.objects.filter(lease_id=lease_id).order_by("version")
