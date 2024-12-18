@@ -10,12 +10,19 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 import os
 import json
+import cloudinary
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url
+import environ
+
+# Initialize environment variables
+env = environ.Env()
+environ.Env.read_env()
 
 load_dotenv()
 
@@ -23,6 +30,11 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATIC_URL = "/static/"
+
+
+# Media files
+# MEDIA_ROOT = os.path.join(BASE_DIR, "documents")
+# MEDIA_URL = "/documents/"
 
 # Determine the environment: development, staging
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -218,3 +230,25 @@ CACHES = {
         "OPTIONS": {"ssl_cert_reqs": None},
     }
 }
+
+
+# Step 1: Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for more detailed logs
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("lease_analysis.log"),  # Logs saved to a file
+        logging.StreamHandler(),  # Logs also shown in the console
+    ],
+)
+
+# Step 2: Create a logger instance
+logger = logging.getLogger(__name__)
+
+
+# Cloudinary configuration from .env file
+cloudinary.config(
+    cloud_name=env('CLOUDINARY_CLOUD_NAME'),
+    api_key=env('CLOUDINARY_API_KEY'),
+    api_secret=env('CLOUDINARY_API_SECRET'),
+)

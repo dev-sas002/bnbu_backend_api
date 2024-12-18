@@ -1,35 +1,24 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/lease/views.py
-import time
-from celery import group
+import os
+import requests
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
-import tiktoken
+from .tasks import analyze_document_task
 from .models import Lease, Document
-from .serializers import (
-    GPTChatSerializer,
-    LeaseSerializer,
-    LeaseUploadSerializer,
-    RevisedLeaseUploadSerializer,
-    DocumentSerializer,
-)
+from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
-from .permissions import IsClientOrAdmin  # Import the custom permission class
+from .permissions import IsClientOrAdmin
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
-from django.http import StreamingHttpResponse, Http404
+from django.http import StreamingHttpResponse
 from datetime import timedelta, datetime, timezone
 import openai
-import PyPDF2
 from django.shortcuts import get_object_or_404
 from django.conf import settings
-import json
-from .utils import split_document_into_chunks
-from .tasks import process_document_chunks
-
 
 class LeaseViewSet(viewsets.ModelViewSet):
     queryset = Lease.objects.all().order_by("-created_at")
@@ -54,14 +43,12 @@ class LeaseViewSet(viewsets.ModelViewSet):
         # Use LeaseUploadSerializer to validate and create the Lease
         serializer = LeaseUploadSerializer(
             data=data, context={"request": request}
-        )  # Pass request in context
+        )
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        lease = (
-            serializer.save()
-        )  # This will now have access to self.context['request']
+        lease = serializer.save()  # This will now have access to self.context['request']
 
         # Serialize the lease with the documents included
         lease_serializer = LeaseSerializer(lease)
@@ -174,33 +161,34 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="preview/(?P<document_id>\d+)")
     def preview_document(self, request, document_id=None):
-        # Fetch the specific document by document ID
+        print(f"Attempting to preview document with ID: {document_id}")
+        
         try:
             document = Document.objects.get(id=document_id)
+            print(f"Document found: {document}")
         except Document.DoesNotExist:
+            print("Document not found in the database.")
             return Response(
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Check if the document has a file
-        if document.file:
-            file_path = document.file.path
+        # Check if the document has a file_url
+        if document.file_url:
+            print(f"Returning document file URL: {document.file_url}")
 
-            # Define a generator function to stream the file
-            def file_iterator(file_name, chunk_size=512):
-                with open(file_name, "rb") as f:
-                    while chunk := f.read(chunk_size):
-                        yield chunk
-
-            response = StreamingHttpResponse(
-                file_iterator(file_path), content_type="application/pdf"
+            # Check if the document has a file_url
+        if document.file_url:
+            print(f"Returning document file URL: {document.file_url}")
+            return Response(
+                {"file_url": document.file_url}, 
+                status=status.HTTP_200_OK
             )
-            response["Content-Disposition"] = f'inline; filename="{document.file.name}"'
-            return response
 
         return Response(
             {"detail": "Document file not found."}, status=status.HTTP_404_NOT_FOUND
         )
+
+
 
     @action(detail=False, methods=["get"], url_path="lease/(?P<lease_id>\d+)/documents")
     def list_document_names(self, request, lease_id=None):
@@ -218,9 +206,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
             {
                 "id": doc.id,
                 "lease_id": doc.lease_id,
-                "name": f"{doc.file.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
+                "name": f"{doc.name.split('/')[-1].rsplit('.', 1)[0]}_v{doc.version}",
                 "uploaded_at": doc.uploaded_at,
                 "status": doc.status,
+                "file_url" : doc.file_url,
             }
             for doc in documents
         ]
@@ -244,59 +233,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
             document = get_object_or_404(Document, pk=document_id)
 
             # Check if the document has a file
-            if not document.file:
+            if not document.file_url:
                 results.append(
                     {"document_id": document_id, "detail": "Document file not found."}
                 )
                 continue
 
-            # Extract text from the PDF file and send it to OpenAI for document review
-            response = self._analyze_document_with_gpt(document)
-            # Set the document status based on GPT's response
-            document.status = response["status"]
-            document.gpt_response = response
-            document.save()
+            analyze_document_task.delay(document_id)
 
             results.append(
                 {
                     "document_id": document_id,
-                    "detail": f"Document reviewed and status set to {response['status']}",
-                    "gpt_response": response,
+                    "detail": f"Document review for document ID {document_id} has started. The review process is in progress."
                 }
             )
-
         return Response(results, status=status.HTTP_200_OK)
-
-    def _analyze_document_with_gpt(self, document):
-        try:
-            # Print the file path
-            print("Document File Path:", document.file.path)
-
-            # Attempt to split the document into chunks
-            chunks = split_document_into_chunks(document.file.path)
-
-            # print("Chunk Results:", chunks)
-
-            # Dispatch Celery task for chunk processing
-            result = process_document_chunks.apply_async(args=[document.id, chunks])
-
-            # Wait for the final result (this will block until the result is available)
-            final_result = result.get()
-
-            # Print final analysis result
-            # print("Final Analysis Result:", final_result)
-
-            return final_result
-
-        except FileNotFoundError as e:
-            # print(f"File not found: {str(e)}")
-            return {"status": "Error", "message": "File not found: {str(e)}"}
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            return {
-                "status": "Error",
-                "message": "An unexpected error occurred: {str(e)}",
-            }
 
     @action(detail=True, methods=["post"], url_path="chat")
     def chat_with_gpt(self, request, pk=None):
@@ -386,16 +337,23 @@ class DocumentViewSet(viewsets.ModelViewSet):
         gpt_response_data = document.gpt_response if document.gpt_response else {}
 
         # Ensure gpt_response_data is a dictionary before accessing its keys
-
-        gpt_response = {
-            "message": gpt_response_data.get("message"),
-            "status": gpt_response_data.get("status"),
-            "timestamp": gpt_response_data.get("created_time"),
-        }
+        if isinstance(gpt_response_data, dict):
+            gpt_response = {
+                "message": gpt_response_data.get("message"),
+                "status": gpt_response_data.get("status"),
+                "timestamp": gpt_response_data.get("created_time")
+            }
+        else:
+            gpt_response = {
+                "message": None,
+                "status": None,
+                "timestamp": None
+            }
 
         chat_history = document.chat_history or []
 
         response_data = {
+            "document_uploaded_at": str(document.uploaded_at),
             "gpt_response": gpt_response,
             "chat_history": chat_history,
         }

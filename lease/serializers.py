@@ -1,6 +1,7 @@
 # serializers.py
 from rest_framework import serializers
 from .models import Lease, Document
+from cloudinary.uploader import upload
 
 class DocumentSerializer(serializers.ModelSerializer):
     lease_id = serializers.PrimaryKeyRelatedField(source='lease', read_only=True)  # To show the lease ID
@@ -35,24 +36,30 @@ class LeaseUploadSerializer(serializers.ModelSerializer):
         documents = validated_data.pop('documents', [])
         user = self.context['request'].user
         lease = Lease.objects.create(user=user, **validated_data)  # Associate with the user
+        new_file_urls = []
         for doc in documents:
-            Document.objects.create(lease=lease, file=doc, name=doc.name)  # Set the document name
+            cloudinary_file = upload(doc, use_filename=True, resource_type='raw', access_mode='public')
+            new_file_urls.append(cloudinary_file['url'])
+            Document.objects.create(lease=lease, file_url=cloudinary_file['url'],name=doc.name)
         return lease
     
 class RevisedLeaseUploadSerializer(serializers.Serializer):
     documents = serializers.ListField(
         child=serializers.FileField(),
         write_only=True,
-        required=True
+        required=False
     )
 
     def update(self, instance, validated_data):
         documents = validated_data.pop('documents', [])
         created_document_ids = []
 
-        # Create Document instances and collect their IDs
+        new_file_urls = []
+
         for doc in documents:
-            document = Document.objects.create(lease=instance, file=doc, name=doc.name)
+            cloudinary_file = upload(doc, use_filename=True, resource_type='raw', access_mode='public')
+            new_file_urls.append(cloudinary_file['url'])
+            document = Document.objects.create(lease=instance, file_url=cloudinary_file['url'],name=doc.name)
             created_document_ids.append(document.id)
 
         # Return the document IDs
