@@ -10,7 +10,7 @@ from .tasks import analyze_document_task
 from .models import Lease, Document
 from .serializers import GPTChatSerializer, LeaseSerializer, LeaseUploadSerializer, RevisedLeaseUploadSerializer, DocumentSerializer
 from rest_framework.permissions import IsAuthenticated
-from .permissions import IsClientOrAdmin
+from .permissions import IsSpecificUserType, IsAdminOrOwnData
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
@@ -24,9 +24,18 @@ class LeaseViewSet(viewsets.ModelViewSet):
     queryset = Lease.objects.all().order_by("-created_at")
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ["address1", "city"]
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]  # Update permission classes
+    permission_classes = [IsAuthenticated, IsSpecificUserType, IsAdminOrOwnData]  # Update permission classes
     pagination_class = PageNumberPagination
     serializer_class = LeaseSerializer
+
+    
+    def get_queryset(self):
+        """
+        Restrict non-admin users to only their data and apply ordering.
+        """
+        if self.request.user.is_staff:
+            return Lease.objects.all().order_by("-created_at")  # Apply ordering here
+        return Lease.objects.filter(user=self.request.user).order_by("-created_at")  # Apply ordering for user data
 
     def get_serializer_class(self):
         if self.action == "upload_lease":
@@ -159,7 +168,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["lease", "version"]
     search_fields = ["name"]
 
-    @action(detail=False, methods=["get"], url_path="preview/(?P<document_id>\d+)")
+    @action(detail=False, methods=["get"], url_path=r"preview/(?P<document_id>\d+)")
     def preview_document(self, request, document_id=None):
         print(f"Attempting to preview document with ID: {document_id}")
         
@@ -190,7 +199,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
 
 
-    @action(detail=False, methods=["get"], url_path="lease/(?P<lease_id>\d+)/documents")
+    @action(detail=False, methods=["get"], url_path=r"lease/(?P<lease_id>\d+)/documents")
     def list_document_names(self, request, lease_id=None):
         # Fetch documents related to the specified lease ID
         documents = Document.objects.filter(lease_id=lease_id).order_by("version")
