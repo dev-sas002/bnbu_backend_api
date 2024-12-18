@@ -5,7 +5,7 @@ from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .permissions import IsClientOrAdmin
+from .permissions import IsSpecificUserType, IsAdminOrOwnData
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
@@ -20,9 +20,18 @@ class RegulationsViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
     search_fields = ['search', 'status']
     filterset_fields = ['search', 'status']
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]
+    permission_classes = [IsAuthenticated, IsSpecificUserType , IsAdminOrOwnData]
     pagination_class = PageNumberPagination
     serializer_class = RegulationsSerializer
+
+    def get_queryset(self):
+        """
+        Restrict non-admin users to only their data and apply ordering.
+        """
+        if self.request.user.is_staff:
+            return Regulations.objects.all().order_by("-created_at")  # Apply ordering here
+        return Regulations.objects.filter(user=self.request.user).order_by("-created_at")  # Apply ordering for user data
+
 
     def perform_create(self, serializer):
         user = self.request.user
