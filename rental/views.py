@@ -12,7 +12,7 @@ from django.db.models import Max
 from datetime import datetime, timedelta
 from django.db.models import Q
 from rest_framework.pagination import PageNumberPagination
-from .permissions import IsClientOrAdmin
+from .permissions import IsSpecificUserType, IsAdminOrOwnData
 from rest_framework.permissions import IsAuthenticated
 from rental.tasks import process_rental_properties_task
 import csv
@@ -25,7 +25,7 @@ class RentalPropertyPagination(PageNumberPagination):
 
 class RentalPropertyViewSet(viewsets.ModelViewSet):
     queryset = RentalProperty.objects.all().order_by('-created_at')
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]
+    permission_classes = [IsAuthenticated, IsSpecificUserType, IsAdminOrOwnData]
     serializer_class = RentalPropertySerializer
     pagination_class = RentalPropertyPagination
 
@@ -58,8 +58,15 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
 
         df = normalize_df(df)
 
+        # Add user information to the data
+        user = request.user
+        context = {
+            'user': user.id,
+            'new_batch_id': new_batch_id
+        }
+
         # Trigger Celery task
-        task = process_rental_properties_task.delay(df.to_json(orient='records'), new_batch_id)
+        task = process_rental_properties_task.delay(df.to_json(orient='records'), context)
 
         return Response({"success": True, "message": f"Batch {new_batch_id} processing started", "task_id": task.id}, status=status.HTTP_202_ACCEPTED)
     
@@ -148,6 +155,11 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
             rental_properties = rental_properties.filter(query).order_by('-created_at')
         else:
             rental_properties = rental_properties.order_by('-created_at')  # No filters, return all
+        
+        if self.request.user.is_staff:
+            rental_properties = rental_properties.order_by('-created_at')
+        else:   
+            rental_properties = rental_properties.filter(user_id=self.request.user.id).order_by('-created_at')
 
 
         # Paginate the results
@@ -203,6 +215,12 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
             rental_properties = rental_properties.filter(query)
         else:
             rental_properties = rental_properties # No filters, return all
+
+        if self.request.user.is_staff:
+            rental_properties = rental_properties.order_by('-created_at')
+        else:   
+            rental_properties = rental_properties.filter(user_id=self.request.user.id).order_by('-created_at')
+
 
         # Prepare the CSV response
         response = StreamingHttpResponse(content_type='text/csv')

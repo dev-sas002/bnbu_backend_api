@@ -12,13 +12,16 @@ from rental.models import RentalProperty
 from datetime import datetime
 import logging
 from io import StringIO
+from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
 
 @shared_task
-def process_rental_properties_task(cleaned_df_json, batch_id):
+def process_rental_properties_task(cleaned_df_json, context):
     try:
         # Convert JSON back to DataFrame
+        batch_id = context['new_batch_id']
+        user_id = context['user']
         cleaned_df = pd.read_json(StringIO(cleaned_df_json))  # Wrap JSON in StringIO
         logger.info("Loaded DataFrame from JSON. Batch ID: %s, Rows: %d", batch_id, len(cleaned_df))
     except Exception as e:
@@ -98,6 +101,7 @@ def process_rental_properties_task(cleaned_df_json, batch_id):
 
               # Save to RentalProperty model
               rental_property = RentalProperty(
+                  user_id=user_id,
                   location=row['Location'],
                   rent=row['Price'] if not pd.isna(row['Price']) else 0,  # Default to 0 if missing
                   no_of_bedrooms=row['Br'] if not pd.isna(row['Br']) else 0,
