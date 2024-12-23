@@ -12,7 +12,7 @@ from django.db.models import Max
 from datetime import datetime, timedelta
 from django.db.models import Q
 from rest_framework.pagination import PageNumberPagination
-from .permissions import IsClientOrAdmin
+from .permissions import IsSpecificUserType, IsAdminOrOwnData
 from rest_framework.permissions import IsAuthenticated
 from rental.tasks import process_rental_properties_task
 import csv
@@ -25,7 +25,7 @@ class RentalPropertyPagination(PageNumberPagination):
 
 class RentalPropertyViewSet(viewsets.ModelViewSet):
     queryset = RentalProperty.objects.all().order_by('-created_at')
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]
+    permission_classes = [IsAuthenticated, IsSpecificUserType, IsAdminOrOwnData]
     serializer_class = RentalPropertySerializer
     pagination_class = RentalPropertyPagination
 
@@ -58,8 +58,15 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
 
         df = normalize_df(df)
 
+        # Add user information to the data
+        user = request.user
+        context = {
+            'user': user.id,
+            'new_batch_id': new_batch_id
+        }
+
         # Trigger Celery task
-        task = process_rental_properties_task.delay(df.to_json(orient='records'), new_batch_id)
+        task = process_rental_properties_task.delay(df.to_json(orient='records'), context)
 
         return Response({"success": True, "message": f"Batch {new_batch_id} processing started", "task_id": task.id}, status=status.HTTP_202_ACCEPTED)
     
@@ -78,6 +85,48 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         else:
             return Response({"success": True, "message": f"Task is {task_result.state}", "result": task_result.result}, status=status.HTTP_200_OK)
         
+    @action(detail=False, methods=['get'], url_path='task-progress')
+    def task_progress(self, request):
+        task_id = request.query_params.get("task_id")
+        if not task_id:
+            return Response({"success": False, "message": "Task ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch task result using task_id
+        task_result = AsyncResult(task_id)
+        
+        # Check the state of the task
+        if task_result.state == "PENDING":
+            return Response({"success": False, "state": "PENDING", "progress": 0}, status=status.HTTP_202_ACCEPTED)
+        elif task_result.state == "PROGRESS":
+            # If the task is in progress, send the current progress value
+            return Response({
+                "success": True,
+                "state": "PROGRESS",
+                "progress": task_result.info.get('progress', 0),
+                "message": task_result.info.get('message', 'Processing...')
+            }, status=status.HTTP_200_OK)
+        elif task_result.state == "SUCCESS":
+            # If the task is successfully completed, return the result
+            return Response({
+                "success": True,
+                "state": "SUCCESS",
+                "progress": 100,
+                "result": task_result.info
+            }, status=status.HTTP_200_OK)
+        elif task_result.state == "FAILURE":
+            # If the task failed, return the error message
+            return Response({
+                "success": False,
+                "state": "FAILURE",
+                "error": str(task_result.result)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            # Handle any other states that may occur
+            return Response({
+                "success": False,
+                "state": task_result.state
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=False, methods=['get'], url_path='all-properties')
     def all_properties(self, request):
         # Fetch all rental properties
@@ -148,6 +197,11 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
             rental_properties = rental_properties.filter(query).order_by('-created_at')
         else:
             rental_properties = rental_properties.order_by('-created_at')  # No filters, return all
+        
+        if self.request.user.is_staff:
+            rental_properties = rental_properties.order_by('-created_at')
+        else:   
+            rental_properties = rental_properties.filter(user_id=self.request.user.id).order_by('-created_at')
 
 
         # Paginate the results
@@ -203,6 +257,12 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
             rental_properties = rental_properties.filter(query)
         else:
             rental_properties = rental_properties # No filters, return all
+
+        if self.request.user.is_staff:
+            rental_properties = rental_properties.order_by('-created_at')
+        else:   
+            rental_properties = rental_properties.filter(user_id=self.request.user.id).order_by('-created_at')
+
 
         # Prepare the CSV response
         response = StreamingHttpResponse(content_type='text/csv')

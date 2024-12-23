@@ -1,8 +1,10 @@
 # /Users/dev/Documents/bnbu-backend-api/bnbu_backend_api/rental/models.py
+from django.conf import settings
 from django.db import models
 import bnbu_constants.constants as constants
     
 class RentalProperty(models.Model):
+    user_id = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, blank=True, null=True)
     location = models.CharField(max_length=255, blank=True, null=True)
