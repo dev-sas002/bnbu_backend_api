@@ -19,9 +19,26 @@ import csv
 from celery.result import AsyncResult
 
 class RentalPropertyPagination(PageNumberPagination):
-    page_size = 10  # Default number of items per page
-    page_size_query_param = 'page_size'  # Allow client to specify page size
-    # max_page_size = 100  # Maximum allowed page size
+    page_size = 10  # Default page size
+    page_size_query_param = 'page_size'  # Query parameter to allow client to set the page size dynamically
+    max_page_size = 100  # Maximum allowed page size for safety
+
+    def get_page_size(self, request):
+        # Get the page size from the query parameters
+        page_size = request.query_params.get(self.page_size_query_param)
+
+        # If no page size is provided, fallback to the default page size
+        if page_size is None:
+            return self.page_size
+
+        try:
+            page_size = int(page_size)
+        except ValueError:
+            # If the page size is not an integer, return the default page size
+            return self.page_size
+
+        # Ensure the page size does not exceed the maximum page size
+        return min(page_size, self.max_page_size)
 
 class RentalPropertyViewSet(viewsets.ModelViewSet):
     queryset = RentalProperty.objects.all().order_by('-created_at')
