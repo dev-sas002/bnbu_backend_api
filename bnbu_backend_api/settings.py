@@ -31,7 +31,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATIC_URL = "/static/"
 
-
+CLICKUP_URL = os.getenv("CLICKUP_URL")
+TEAM_ID = os.getenv("TEAM_ID")
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+APPROVED = os.getenv("APPROVED")
+ZILLOW_CUSTOM_ID = os.getenv("ZILLOW_CUSTOM_ID")
+PROPERTY_STATUS_CUSTOM_ID = os.getenv("PROPERTY_STATUS_CUSTOM_ID")
 # Media files
 # MEDIA_ROOT = os.path.join(BASE_DIR, "documents")
 # MEDIA_URL = "/documents/"

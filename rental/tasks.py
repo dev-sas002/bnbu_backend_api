@@ -127,6 +127,8 @@ def process_rental_properties_task(self, cleaned_df_json, context):
                     )[2]
 
                     rental_property.save()
+                    if rental_property.property_status == "Approved":
+                        result = upload_properties_to_clickup(rental_property.location, rental_property.property_zillow_link, rental_property.property_status)
                     logger.debug("Saved RentalProperty: %s", rental_property)
                 except Exception as e:
                     logger.error("Error saving RentalProperty for Location: %s. Error: %s", row['Location'], e, exc_info=True)
@@ -148,3 +150,47 @@ def process_rental_properties_task(self, cleaned_df_json, context):
     except Exception as e:
         logger.error("Error concatenating results: %s", e, exc_info=True)
         raise
+
+
+from django.conf import settings
+import requests
+def upload_properties_to_clickup(task_name, zillow_link, property_status):
+    query_params = {
+        "custom_task_ids": True,
+        "team_id": settings.TEAM_ID,
+    }
+    headers = {
+        "content-type": "application/json",
+        "Authorization":settings.ACCESS_TOKEN,
+    }
+
+    zillow_custom_id = settings.ZILLOW_CUSTOM_ID
+    property_status_custom_id = settings.PROPERTY_STATUS_CUSTOM_ID
+
+    property_status_options = {
+        "Approved": settings.APPROVED,
+        "Rejected": "259560c3-e128-4b7a-8265-7353e838dc7c",
+        "Call Back": "cebb1b5e-df5d-4d8a-962e-8ab495a16eda",
+        "Owner Approval": "2f4670ba-e556-4475-94e1-03db3a986e5a",
+        "On Hold": "fc866b1e-88af-4f4c-a5b0-2143d65cb8a4",
+        "SEE NOTES": "0ea8ec8e-61e3-4527-a160-da378ad0e3ae",
+        "FOR CHI ONLY": "80e99f57-ac03-4225-aaf0-528cbb2bdbfc"
+    }
+
+    payload = {
+        "name": task_name,
+        "status": "to do",
+        "custom_fields": [
+            {
+                "id": zillow_custom_id,
+                "value": zillow_link
+            },
+            {
+                "id": property_status_custom_id,
+                "value": property_status_options.get(property_status, None)  # Property Status dropdown option
+            }
+        ]
+    }
+    
+    response = requests.post(settings.CLICKUP_URL, headers=headers, json=payload, query=query_params)
+    return response.json()
