@@ -14,6 +14,8 @@ import logging
 from io import StringIO
 from django.contrib.auth import get_user_model
 from tqdm import tqdm
+from django.conf import settings
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +153,6 @@ def process_rental_properties_task(self, cleaned_df_json, context):
         logger.error("Error concatenating results: %s", e, exc_info=True)
         raise
 
-
-from django.conf import settings
-import requests
 def upload_properties_to_clickup(task_name, zillow_link, property_status):
     query_params = {
         "custom_task_ids": True,
@@ -191,6 +190,21 @@ def upload_properties_to_clickup(task_name, zillow_link, property_status):
             }
         ]
     }
-    
-    response = requests.post(settings.CLICKUP_URL, headers=headers, json=payload, query=query_params)
-    return response.json()
+
+    # Log the payload being sent to ClickUp
+    logger.debug("Payload sent to ClickUp: %s", payload)
+
+    try:
+        response = requests.post(settings.CLICKUP_URL, headers=headers, json=payload, params=query_params)
+        response.raise_for_status()  # Raises an HTTPError for 4xx/5xx responses
+        
+        # Log the response from ClickUp
+        logger.info("Response from ClickUp: %s", response.json())
+        
+        return response.json()
+    except requests.exceptions.JSONDecodeError:
+        logger.error(f"JSON decoding failed. Status: {response.status_code}, Response: {response.text}")
+        raise ValueError(f"JSON decoding failed. Status: {response.status_code}, Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request to ClickUp failed: {e}")
+        raise ValueError(f"Request failed: {e}")

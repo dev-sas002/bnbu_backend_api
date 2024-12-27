@@ -31,7 +31,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATIC_URL = "/static/"
 
-CLICKUP_URL = os.getenv("CLICKUP_URL")
+CLICKUP_BASE_URL = os.getenv("CLICKUP_URL")  # Base URL with placeholder
+LIST_ID = os.getenv("LIST_ID")  # Load the list ID
+
+# Format the URL dynamically by replacing {list_id} with the actual LIST_ID
+CLICKUP_URL = CLICKUP_BASE_URL.format(list_id=LIST_ID)
+
 TEAM_ID = os.getenv("TEAM_ID")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 APPROVED = os.getenv("APPROVED")
