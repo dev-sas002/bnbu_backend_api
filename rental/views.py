@@ -220,6 +220,10 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
         else:   
             rental_properties = rental_properties.filter(user_id=self.request.user.id).order_by('-created_at')
 
+        list_of_batch_ids = set()
+        for property in RentalProperty.objects.all():
+            list_of_batch_ids.add(property.batch_id)
+        all_batch_ids = list(list_of_batch_ids)
 
         # Paginate the results
         paginator = RentalPropertyPagination()
@@ -227,7 +231,14 @@ class RentalPropertyViewSet(viewsets.ModelViewSet):
 
         # Serialize the results
         serializer = self.get_serializer(paginated_properties, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        
+        # Include max_batch_id in the response
+        response_data = {
+            'all_batch_ids': all_batch_ids,
+            'properties': serializer.data,
+        }
+
+        return paginator.get_paginated_response(response_data)
     
     @action(detail=False, methods=['get'], url_path='download-csv')
     def download_csv(self, request):
